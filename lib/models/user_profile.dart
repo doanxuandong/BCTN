@@ -17,6 +17,15 @@ class UserProfile {
   final List<String> interests;
   final ProfileStats stats;
   final PrivacySettings privacy;
+  
+  // Thêm các trường từ Firebase
+  final String? pic; // URL ảnh đại diện từ Firebase
+  final bool sex; // true = nam, false = nữ
+  final String type; // 1=thường, 2=VIP, 3=admin
+  final String address;
+  final bool isOwnProfile; // true = profile của mình, false = profile người khác
+  final List<String> friends; // Danh sách userId bạn bè
+  final List<String> followers; // Danh sách userId người theo dõi
 
   UserProfile({
     required this.id,
@@ -35,6 +44,13 @@ class UserProfile {
     this.interests = const [],
     required this.stats,
     required this.privacy,
+    this.pic,
+    this.sex = true, // Mặc định là nam
+    this.type = '1', // Mặc định là người dùng thường
+    this.address = '',
+    this.isOwnProfile = false,
+    this.friends = const [],
+    this.followers = const [],
   });
 
   UserProfile copyWith({
@@ -54,6 +70,13 @@ class UserProfile {
     List<String>? interests,
     ProfileStats? stats,
     PrivacySettings? privacy,
+    String? pic,
+    bool? sex,
+    String? type,
+    String? address,
+    bool? isOwnProfile,
+    List<String>? friends,
+    List<String>? followers,
   }) {
     return UserProfile(
       id: id ?? this.id,
@@ -72,17 +95,61 @@ class UserProfile {
       interests: interests ?? this.interests,
       stats: stats ?? this.stats,
       privacy: privacy ?? this.privacy,
+      pic: pic ?? this.pic,
+      sex: sex ?? this.sex,
+      type: type ?? this.type,
+      address: address ?? this.address,
+      isOwnProfile: isOwnProfile ?? this.isOwnProfile,
+      friends: friends ?? this.friends,
+      followers: followers ?? this.followers,
     );
   }
 
   String get displayName => name.isNotEmpty ? name : 'Người dùng';
   String get initials => displayName.split(' ').map((word) => word.isNotEmpty ? word[0] : '').take(2).join().toUpperCase();
+  
+  // Getter methods cho các trường mới
+  String get genderText => sex ? 'Nam' : 'Nữ';
+  String get typeText {
+    switch (type) {
+      case '1': return 'Người dùng thường';
+      case '2': return 'Chủ thầu';
+      case '3': return 'Cửa hàng vật liệu';
+      case '4': return 'Nhà thiết kế';
+      default: return 'Người dùng thường';
+    }
+  }
+  
+  Color get typeColor {
+    switch (type) {
+      case '1': return Colors.grey; // Người dùng thường
+      case '2': return Colors.blue; // Chủ thầu
+      case '3': return Colors.green; // Cửa hàng vật liệu
+      case '4': return Colors.purple; // Nhà thiết kế
+      default: return Colors.grey;
+    }
+  }
+  
+  // Kiểm tra các trường có dữ liệu hay không
+  bool get hasPhone => phone.isNotEmpty;
+  bool get hasAddress => address.isNotEmpty;
+  bool get hasBio => bio.isNotEmpty;
+  bool get hasPosition => position.isNotEmpty;
+  bool get hasCompany => company.isNotEmpty;
+  bool get hasLocation => location.isNotEmpty;
+  bool get hasSkills => skills.isNotEmpty;
+  bool get hasInterests => interests.isNotEmpty;
+  bool get hasAvatar => (avatarUrl?.isNotEmpty ?? false) || (pic?.isNotEmpty ?? false);
+  
+  // Lấy ảnh đại diện (ưu tiên pic từ Firebase)
+  String? get displayAvatar => pic?.isNotEmpty == true ? pic : avatarUrl;
 }
 
 class ProfileStats {
   final int posts;
   final int followers;
   final int following;
+  final int friends; // Thêm số lượng bạn bè
   final int projects;
   final int materials;
   final int transactions;
@@ -91,6 +158,7 @@ class ProfileStats {
     this.posts = 0,
     this.followers = 0,
     this.following = 0,
+    this.friends = 0,
     this.projects = 0,
     this.materials = 0,
     this.transactions = 0,
@@ -100,6 +168,7 @@ class ProfileStats {
     int? posts,
     int? followers,
     int? following,
+    int? friends,
     int? projects,
     int? materials,
     int? transactions,
@@ -108,6 +177,7 @@ class ProfileStats {
       posts: posts ?? this.posts,
       followers: followers ?? this.followers,
       following: following ?? this.following,
+      friends: friends ?? this.friends,
       projects: projects ?? this.projects,
       materials: materials ?? this.materials,
       transactions: transactions ?? this.transactions,

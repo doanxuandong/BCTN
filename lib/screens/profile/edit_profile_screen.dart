@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../models/user_profile.dart';
+import '../../models/user_profile.dart';
+import '../../services/profile/profile_service.dart';
 
 class EditProfileScreen extends StatefulWidget {
   final UserProfile user;
@@ -11,6 +12,7 @@ class EditProfileScreen extends StatefulWidget {
 }
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
+  final ProfileService _profileService = ProfileService();
   late TextEditingController _nameController;
   late TextEditingController _emailController;
   late TextEditingController _phoneController;
@@ -18,9 +20,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController _companyController;
   late TextEditingController _locationController;
   late TextEditingController _bioController;
+  late TextEditingController _addressController;
 
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
+  bool _isMale = true; // true = nam, false = nữ
+  String _userType = '1'; // 1 = thường, 2 = vip, 3 = admin
 
   @override
   void initState() {
@@ -36,6 +41,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _companyController = TextEditingController(text: widget.user.company);
     _locationController = TextEditingController(text: widget.user.location);
     _bioController = TextEditingController(text: widget.user.bio);
+    _addressController = TextEditingController(text: widget.user.address);
+    
+    // Khởi tạo giới tính và loại tài khoản
+    _isMale = widget.user.sex;
+    _userType = widget.user.type;
   }
 
   @override
@@ -47,6 +57,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _companyController.dispose();
     _locationController.dispose();
     _bioController.dispose();
+    _addressController.dispose();
     super.dispose();
   }
 
@@ -94,6 +105,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             _buildAvatarSection(),
             const SizedBox(height: 24),
             _buildBasicInfoCard(),
+            const SizedBox(height: 16),
+            _buildPersonalInfoCard(),
             const SizedBox(height: 16),
             _buildProfessionalInfoCard(),
             const SizedBox(height: 16),
@@ -256,6 +269,121 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 }
                 return null;
               },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPersonalInfoCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Thông tin cá nhân',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _addressController,
+              decoration: const InputDecoration(
+                labelText: 'Địa chỉ',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.location_on),
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            // Giới tính
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "Giới tính",
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: RadioListTile<bool>(
+                          title: const Text("Nam"),
+                          value: true,
+                          groupValue: _isMale,
+                          onChanged: (value) {
+                            setState(() {
+                              _isMale = value!;
+                            });
+                          },
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                      Expanded(
+                        child: RadioListTile<bool>(
+                          title: const Text("Nữ"),
+                          value: false,
+                          groupValue: _isMale,
+                          onChanged: (value) {
+                            setState(() {
+                              _isMale = value!;
+                            });
+                          },
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            // Loại tài khoản
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "Loại tài khoản",
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                  DropdownButtonFormField<String>(
+                    value: _userType,
+                    decoration: const InputDecoration(
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: '1', child: Text("Người dùng thường")),
+                      DropdownMenuItem(value: '2', child: Text("Chủ thầu")),
+                      DropdownMenuItem(value: '3', child: Text("Cửa hàng vật liệu")),
+                      DropdownMenuItem(value: '4', child: Text("Nhà thiết kế")),
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        _userType = value!;
+                      });
+                    },
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -430,25 +558,64 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       _isLoading = true;
     });
 
-    // Simulate API call
-    await Future.delayed(const Duration(seconds: 2));
+    try {
+      // Chuẩn bị dữ liệu cập nhật
+      Map<String, dynamic> updateData = {
+        'name': _nameController.text,
+        'email': _emailController.text,
+        'phone': _phoneController.text,
+        'position': _positionController.text,
+        'company': _companyController.text,
+        'location': _locationController.text,
+        'bio': _bioController.text,
+        'address': _addressController.text,
+        'sex': _isMale,
+        'type': _userType,
+        'userName': _nameController.text.split(' ').last,
+      };
 
-    final updatedUser = widget.user.copyWith(
-      name: _nameController.text,
-      email: _emailController.text,
-      phone: _phoneController.text,
-      position: _positionController.text,
-      company: _companyController.text,
-      location: _locationController.text,
-      bio: _bioController.text,
-    );
+      print('Updating profile with data: $updateData');
 
-    setState(() {
-      _isLoading = false;
-    });
+      // Lưu lên Firebase
+      bool success = await _profileService.updateProfile(widget.user.id, updateData);
+      
+      if (success) {
+        print('Profile updated successfully');
+        
+        // Tạo updated user object để trả về
+        final updatedUser = widget.user.copyWith(
+          name: _nameController.text,
+          email: _emailController.text,
+          phone: _phoneController.text,
+          position: _positionController.text,
+          company: _companyController.text,
+          location: _locationController.text,
+          bio: _bioController.text,
+          address: _addressController.text,
+          sex: _isMale,
+          type: _userType,
+        );
 
-    Navigator.pop(context, updatedUser);
-    _showSnackBar('Đã cập nhật hồ sơ thành công');
+        setState(() {
+          _isLoading = false;
+        });
+
+        Navigator.pop(context, updatedUser);
+        _showSnackBar('Đã cập nhật hồ sơ thành công');
+      } else {
+        print('Failed to update profile');
+        setState(() {
+          _isLoading = false;
+        });
+        _showSnackBar('Có lỗi xảy ra khi cập nhật hồ sơ');
+      }
+    } catch (e) {
+      print('Error updating profile: $e');
+      setState(() {
+        _isLoading = false;
+      });
+      _showSnackBar('Có lỗi xảy ra: ${e.toString()}');
+    }
   }
 
   void _showSnackBar(String message) {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/user/user_session.dart';
 import '../models/user_profile.dart';
 
 class ProfileMenu extends StatelessWidget {
@@ -338,16 +339,26 @@ class MenuItemFactory {
             child: const Text('Hủy'),
           ),
           TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              // Perform logout
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Đã đăng xuất thành công'),
-                  backgroundColor: Colors.green,
-                ),
-              );
-            },
+                 onPressed: () async {
+                   Navigator.pop(context);
+                   // Perform logout with UserSession
+                   try {
+                     await UserSession.logout();
+                     ScaffoldMessenger.of(context).showSnackBar(
+                       const SnackBar(
+                         content: Text('Đã đăng xuất thành công'),
+                         backgroundColor: Colors.green,
+                       ),
+                     );
+                   } catch (e) {
+                     ScaffoldMessenger.of(context).showSnackBar(
+                       SnackBar(
+                         content: Text('Lỗi đăng xuất: ${e.toString()}'),
+                         backgroundColor: Colors.red,
+                       ),
+                     );
+                   }
+                 },
             child: const Text('Đăng xuất'),
           ),
         ],

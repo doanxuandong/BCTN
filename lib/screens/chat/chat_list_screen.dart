@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
-import '../models/chat_model.dart';
-import '../components/chat_item.dart';
+// import '../../models/chat_model.dart';
+import '../../models/user_profile.dart';
+// import '../../components/chat_item.dart';
+import '../../services/chat/chat_service.dart';
+import '../../services/friends/friends_service.dart';
+import '../../services/user/user_session.dart';
 import 'chat_detail_screen.dart';
 
 class ChatListScreen extends StatefulWidget {
@@ -11,18 +15,40 @@ class ChatListScreen extends StatefulWidget {
 }
 
 class _ChatListScreenState extends State<ChatListScreen> {
-  List<Chat> _chats = SampleChatData.chats;
   String _searchQuery = '';
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadChats();
+  }
+
+  Future<void> _loadChats() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // In friends view, we don't need to load chats list
+      setState(() {
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final filteredChats = _getFilteredChats();
 
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
         title: const Text(
-          'Tin nhắn',
+          'Bạn bè',
           style: TextStyle(
             fontWeight: FontWeight.bold,
             color: Colors.white,
@@ -45,11 +71,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
       body: Column(
         children: [
           _buildSearchBar(),
-          _buildChatStats(),
+          _buildFriendsHeader(),
           Expanded(
-            child: filteredChats.isEmpty
-                ? _buildEmptyState()
-                : _buildChatList(filteredChats),
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _buildFriendsList(),
           ),
         ],
       ),
@@ -96,92 +122,71 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 
-  Widget _buildChatStats() {
-    final totalChats = _chats.length;
-    final unreadCount = _chats.fold(0, (sum, chat) => sum + chat.unreadCount);
-    final onlineCount = _chats.where((chat) => chat.isOnline).length;
-
+  Widget _buildFriendsHeader() {
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
-        children: [
-          Expanded(
-            child: _buildStatItem(
-              'Cuộc trò chuyện',
-              '$totalChats',
-              Icons.chat_bubble_outline,
-              Colors.blue,
-            ),
-          ),
-          Container(
-            width: 1,
-            height: 40,
-            color: Colors.grey[300],
-          ),
-          Expanded(
-            child: _buildStatItem(
-              'Tin nhắn chưa đọc',
-              '$unreadCount',
-              Icons.mark_email_unread_outlined,
-              Colors.orange,
-            ),
-          ),
-          Container(
-            width: 1,
-            height: 40,
-            color: Colors.grey[300],
-          ),
-          Expanded(
-            child: _buildStatItem(
-              'Đang hoạt động',
-              '$onlineCount',
-              Icons.circle,
-              Colors.green,
-            ),
+        children: const [
+          Icon(Icons.group, color: Colors.blue),
+          SizedBox(width: 8),
+          Text(
+            'Danh sách bạn bè',
+            style: TextStyle(fontWeight: FontWeight.bold),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildStatItem(String label, String value, IconData icon, Color color) {
-    return Column(
-      children: [
-        Icon(icon, color: color, size: 20),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: color,
-          ),
-        ),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            color: Colors.grey[600],
-          ),
-          textAlign: TextAlign.center,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ],
+  // removed old stat item
+
+  Widget _buildFriendsList() {
+    return FutureBuilder<List<UserProfile>>(
+      future: _loadFriends(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final friends = snapshot.data!;
+        if (friends.isEmpty) {
+          return _buildEmptyState();
+        }
+        return ListView.builder(
+          itemCount: friends.length,
+          itemBuilder: (context, index) {
+            final friend = friends[index];
+            return ListTile(
+              leading: CircleAvatar(
+                backgroundColor: Colors.blue[100],
+                backgroundImage: friend.pic != null ? NetworkImage(friend.pic!) : null,
+                child: friend.pic == null ? Text(friend.name[0].toUpperCase()) : null,
+              ),
+              title: Text(friend.name),
+              subtitle: friend.position != null ? Text(friend.position!) : null,
+              onTap: () => _startChatWith(friend.id),
+            );
+          },
+        );
+      },
     );
   }
 
-  Widget _buildChatList(List<Chat> chats) {
-    return ListView.builder(
-      itemCount: chats.length,
-      itemBuilder: (context, index) {
-        final chat = chats[index];
-        return ChatItem(
-          chat: chat,
-          onTap: () => _openChat(chat),
-        );
-      },
+  Future<List<UserProfile>> _loadFriends() async {
+    final current = await UserSession.getCurrentUser();
+    if (current == null) return [];
+    final service = FriendsService();
+    return service.getFriends(current['userId']?.toString() ?? '');
+  }
+
+  Future<void> _startChatWith(String otherUserId) async {
+    final chatId = await ChatService.createChat(otherUserId);
+    if (!mounted || chatId == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatDetailScreen(chatId: chatId),
+      ),
     );
   }
 
@@ -191,13 +196,13 @@ class _ChatListScreenState extends State<ChatListScreen> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            Icons.chat_bubble_outline,
+            Icons.group_outlined,
             size: 80,
             color: Colors.grey[400],
           ),
           const SizedBox(height: 16),
           Text(
-            _searchQuery.isEmpty ? 'Chưa có cuộc trò chuyện nào' : 'Không tìm thấy kết quả',
+            _searchQuery.isEmpty ? 'Chưa có bạn bè nào' : 'Không tìm thấy kết quả',
             style: TextStyle(
               fontSize: 18,
               color: Colors.grey[600],
@@ -205,8 +210,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            _searchQuery.isEmpty 
-                ? 'Bắt đầu cuộc trò chuyện đầu tiên của bạn!'
+            _searchQuery.isEmpty
+                ? 'Hãy kết bạn để bắt đầu trò chuyện!'
                 : 'Thử thay đổi từ khóa tìm kiếm',
             style: TextStyle(
               fontSize: 14,
@@ -218,8 +223,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
             const SizedBox(height: 24),
             ElevatedButton.icon(
               onPressed: _startNewChat,
-              icon: const Icon(Icons.chat),
-              label: const Text('Bắt đầu trò chuyện'),
+              icon: const Icon(Icons.person_add),
+              label: const Text('Thêm bạn bè'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.blue[700],
                 foregroundColor: Colors.white,
@@ -232,28 +237,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 
-  List<Chat> _getFilteredChats() {
-    if (_searchQuery.isEmpty) {
-      return _chats;
-    }
-
-    return _chats.where((chat) {
-      return chat.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-             chat.lastMessage.toLowerCase().contains(_searchQuery.toLowerCase());
-    }).toList();
-  }
-
-  void _openChat(Chat chat) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ChatDetailScreen(chat: chat),
-      ),
-    ).then((_) {
-      // Refresh chat list when returning
-      setState(() {});
-    });
-  }
+  // Legacy chat filter no longer used in friends view
 
   void _startNewChat() {
     showModalBottomSheet(

@@ -5,12 +5,14 @@ class ProfileHeader extends StatelessWidget {
   final UserProfile user;
   final VoidCallback? onEditProfile;
   final VoidCallback? onEditCover;
+  final VoidCallback? onEditAvatar;
 
   const ProfileHeader({
     super.key,
     required this.user,
     this.onEditProfile,
     this.onEditCover,
+    this.onEditAvatar,
   });
 
   @override
@@ -92,9 +94,11 @@ class ProfileHeader extends StatelessWidget {
           const SizedBox(height: 16),
           _buildUserInfo(),
           const SizedBox(height: 16),
-          if (user.bio.isNotEmpty) _buildBio(),
+          if (user.hasBio) _buildBio(),
           const SizedBox(height: 16),
           _buildUserDetails(),
+          const SizedBox(height: 16),
+          _buildDetailedInfo(),
         ],
       ),
     );
@@ -115,16 +119,35 @@ class ProfileHeader extends StatelessWidget {
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
                 ),
+                overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 4),
               Text(
-                user.position.isNotEmpty ? user.position : 'Thành viên',
+                user.hasPosition ? user.position : 'Thành viên',
                 style: TextStyle(
                   fontSize: 16,
                   color: Colors.grey[600],
                 ),
               ),
-              if (user.company.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              // Badge loại tài khoản
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: user.typeColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: user.typeColor, width: 1),
+                ),
+                child: Text(
+                  user.typeText,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: user.typeColor,
+                  ),
+                ),
+              ),
+              if (user.hasCompany) ...[
                 const SizedBox(height: 2),
                 Text(
                   user.company,
@@ -143,30 +166,32 @@ class ProfileHeader extends StatelessWidget {
   }
 
   Widget _buildAvatar() {
-    return Stack(
-      children: [
-        Container(
-          width: 80,
-          height: 80,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 4),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.grey.withOpacity(0.3),
-                spreadRadius: 2,
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: CircleAvatar(
-            radius: 36,
-            backgroundColor: Colors.blue[100],
-            child: user.avatarUrl != null
+    return GestureDetector(
+      onTap: onEditAvatar,
+      child: Stack(
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 4),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.grey.withOpacity(0.3),
+                  spreadRadius: 2,
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: CircleAvatar(
+              radius: 36,
+              backgroundColor: Colors.blue[100],
+            child: user.displayAvatar != null
                 ? ClipOval(
                     child: Image.network(
-                      user.avatarUrl!,
+                      user.displayAvatar!,
                       width: 72,
                       height: 72,
                       fit: BoxFit.cover,
@@ -176,27 +201,28 @@ class ProfileHeader extends StatelessWidget {
                     ),
                   )
                 : _buildDefaultAvatar(),
-          ),
-        ),
-        Positioned(
-          bottom: 0,
-          right: 0,
-          child: Container(
-            width: 24,
-            height: 24,
-            decoration: BoxDecoration(
-              color: Colors.blue,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2),
-            ),
-            child: const Icon(
-              Icons.camera_alt,
-              color: Colors.white,
-              size: 12,
             ),
           ),
-        ),
-      ],
+          Positioned(
+            bottom: 0,
+            right: 0,
+            child: Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                color: Colors.blue,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+              ),
+              child: const Icon(
+                Icons.camera_alt,
+                color: Colors.white,
+                size: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -214,33 +240,34 @@ class ProfileHeader extends StatelessWidget {
   Widget _buildActionButtons() {
     return Column(
       children: [
-        ElevatedButton.icon(
-          onPressed: onEditProfile,
-          icon: const Icon(Icons.edit, size: 16),
-          label: const Text('Chỉnh sửa'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.blue[700],
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: Colors.blue[700],
+            shape: BoxShape.circle,
+          ),
+          child: IconButton(
+            onPressed: onEditProfile,
+            icon: const Icon(Icons.edit, size: 20, color: Colors.white),
+            padding: EdgeInsets.zero,
           ),
         ),
         const SizedBox(height: 8),
-        OutlinedButton.icon(
-          onPressed: () {
-            // Share profile functionality
-          },
-          icon: const Icon(Icons.share, size: 16),
-          label: const Text('Chia sẻ'),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: Colors.blue[700],
-            side: BorderSide(color: Colors.blue[700]!),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.blue[700]!, width: 2),
+          ),
+          child: IconButton(
+            onPressed: () {
+              // Share profile functionality
+            },
+            icon: Icon(Icons.share, size: 20, color: Colors.blue[700]),
+            padding: EdgeInsets.zero,
           ),
         ),
       ],
@@ -263,7 +290,7 @@ class ProfileHeader extends StatelessWidget {
           height: 40,
           color: Colors.grey[300],
         ),
-        _buildInfoItem('Vị trí', user.location.isNotEmpty ? user.location : 'Chưa cập nhật'),
+        _buildInfoItem('Vị trí', user.hasLocation ? user.location : 'Chưa cập nhật'),
       ],
     );
   }
@@ -419,6 +446,97 @@ class ProfileHeader extends StatelessWidget {
       return '${difference.inMinutes} phút trước';
     } else {
       return 'Vừa xong';
+    }
+  }
+  
+  Widget _buildDetailedInfo() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.info_outline, color: Colors.grey[600], size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Thông tin chi tiết',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey[700],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildInfoRow('Số điện thoại', user.hasPhone ? user.phone : 'Chưa cập nhật', Icons.phone),
+          _buildInfoRow('Địa chỉ', user.hasAddress ? user.address : 'Chưa cập nhật', Icons.location_on),
+          _buildInfoRow('Giới tính', user.genderText, Icons.person),
+          if (user.hasSkills) _buildInfoRow('Kỹ năng', user.skills.take(3).join(', '), Icons.star),
+          if (user.hasInterests) _buildInfoRow('Sở thích', user.interests.take(3).join(', '), Icons.favorite),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildInfoRow(String label, String value, IconData icon) {
+    bool isEmpty = value == 'Chưa cập nhật' || value.isEmpty;
+    
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: Colors.grey[600]),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '$label: ',
+              style: TextStyle(
+                fontWeight: FontWeight.w500,
+                color: Colors.grey[700],
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              value,
+              style: TextStyle(
+                color: isEmpty ? Colors.grey[500] : Colors.grey[800],
+                fontStyle: isEmpty ? FontStyle.italic : FontStyle.normal,
+              ),
+            ),
+          ),
+          if (user.isOwnProfile && isEmpty)
+            GestureDetector(
+              onTap: () => _onEditField(label),
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Icon(
+                  Icons.edit,
+                  size: 14,
+                  color: Colors.blue[700],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+  
+  void _onEditField(String fieldName) {
+    // Navigate to edit profile with specific field focus
+    if (onEditProfile != null) {
+      onEditProfile!();
     }
   }
 }

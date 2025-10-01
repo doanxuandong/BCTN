@@ -6,6 +6,7 @@ class ProfileStatsWidget extends StatelessWidget {
   final VoidCallback? onPostsTap;
   final VoidCallback? onFollowersTap;
   final VoidCallback? onFollowingTap;
+  final VoidCallback? onFriendsTap;
   final VoidCallback? onProjectsTap;
   final VoidCallback? onMaterialsTap;
   final VoidCallback? onTransactionsTap;
@@ -16,6 +17,7 @@ class ProfileStatsWidget extends StatelessWidget {
     this.onPostsTap,
     this.onFollowersTap,
     this.onFollowingTap,
+    this.onFriendsTap,
     this.onProjectsTap,
     this.onMaterialsTap,
     this.onTransactionsTap,
@@ -66,11 +68,11 @@ class ProfileStatsWidget extends StatelessWidget {
               ),
               Expanded(
                 child: _buildStatItem(
-                  'Người theo dõi',
-                  stats.followers,
+                  'Bạn bè',
+                  stats.friends,
                   Icons.people_outline,
                   Colors.green,
-                  onFollowersTap,
+                  onFriendsTap,
                 ),
               ),
               Container(
@@ -80,7 +82,7 @@ class ProfileStatsWidget extends StatelessWidget {
               ),
               Expanded(
                 child: _buildStatItem(
-                  'Đang theo dõi',
+                  'Theo dõi',
                   stats.following,
                   Icons.person_add_outlined,
                   Colors.orange,
@@ -97,6 +99,20 @@ class ProfileStatsWidget extends StatelessWidget {
           const SizedBox(height: 16),
           Row(
             children: [
+              Expanded(
+                child: _buildStatItem(
+                  'Người theo dõi',
+                  stats.followers,
+                  Icons.favorite_outline,
+                  Colors.pink,
+                  onFollowersTap,
+                ),
+              ),
+              Container(
+                width: 1,
+                height: 60,
+                color: Colors.grey[300],
+              ),
               Expanded(
                 child: _buildStatItem(
                   'Dự án',
@@ -118,20 +134,6 @@ class ProfileStatsWidget extends StatelessWidget {
                   Icons.inventory_2_outlined,
                   Colors.red,
                   onMaterialsTap,
-                ),
-              ),
-              Container(
-                width: 1,
-                height: 60,
-                color: Colors.grey[300],
-              ),
-              Expanded(
-                child: _buildStatItem(
-                  'Giao dịch',
-                  stats.transactions,
-                  Icons.swap_horiz,
-                  Colors.teal,
-                  onTransactionsTap,
                 ),
               ),
             ],

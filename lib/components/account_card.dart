@@ -69,11 +69,19 @@ class AccountCard extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
-              color: account.type == AccountType.contractor ? Colors.green : Colors.orange,
+              color: account.type == AccountType.designer 
+                  ? Colors.purple 
+                  : account.type == AccountType.contractor 
+                      ? Colors.green 
+                      : Colors.orange,
               borderRadius: BorderRadius.circular(10),
             ),
             child: Text(
-              account.type == AccountType.contractor ? 'Chủ thầu' : 'Cửa hàng',
+              account.type == AccountType.designer 
+                  ? 'Nhà thiết kế' 
+                  : account.type == AccountType.contractor 
+                      ? 'Chủ thầu' 
+                      : 'Cửa hàng',
               style: const TextStyle(color: Colors.white, fontSize: 10),
             ),
           ),
@@ -112,7 +120,9 @@ class AccountCard extends StatelessWidget {
           spacing: 6,
           runSpacing: 6,
           children: account.specialties.take(3).map((s) => _chip(s.name)).toList(),
-        )
+        ),
+        const SizedBox(height: 6),
+        _buildAdditionalInfo(),
       ],
     );
   }
@@ -158,6 +168,32 @@ class AccountCard extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+
+  Widget _buildAdditionalInfo() {
+    String info = '';
+    
+    switch (account.type) {
+      case AccountType.designer:
+        info = '${account.additionalInfo['experience'] ?? 'N/A'} • ${account.additionalInfo['price_range'] ?? 'N/A'}';
+        break;
+      case AccountType.contractor:
+        info = '${account.additionalInfo['license'] ?? 'N/A'} • ${account.additionalInfo['experience'] ?? 'N/A'}';
+        break;
+      case AccountType.store:
+        info = '${account.additionalInfo['business_type'] ?? 'N/A'} • ${account.additionalInfo['delivery'] ?? 'N/A'}';
+        break;
+    }
+    
+    return Text(
+      info,
+      style: TextStyle(
+        color: Colors.grey[600],
+        fontSize: 11,
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
     );
   }
 }

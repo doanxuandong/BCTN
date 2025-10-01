@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../models/construction_material.dart';
-import '../components/material_card.dart';
+import '../../models/construction_material.dart';
+import '../../components/material_card.dart';
 import 'add_edit_material_screen.dart';
 import 'material_detail_screen.dart';
 

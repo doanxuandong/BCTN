@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "262799123329",
+    "project_id": "mc-abbot-kidsplaza",
+    "storage_bucket": "mc-abbot-kidsplaza.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:262799123329:android:3d8f2b9d1541e5cb36fe80",
+        "android_client_info": {
+          "package_name": "com.example.builderconnect"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBhThLPsBiMo1xfJZaA8yrp9TYto971GPg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
