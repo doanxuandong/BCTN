@@ -43,11 +43,8 @@ class ImageSourceDialog extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.delete, color: Colors.red),
               title: const Text('Xóa ảnh hiện tại'),
-              onTap: () async {
-                Navigator.of(context).pop();
-                if (context.mounted) {
-                  Navigator.of(context).pop('delete');
-                }
+              onTap: () {
+                Navigator.of(context).pop('delete');
               },
             ),
           ],

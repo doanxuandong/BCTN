@@ -1,5 +1,6 @@
 class ConstructionMaterial {
   final String id;
+  final String userId; // Thêm trường userId để phân biệt vật liệu của từng user
   final String name;
   final String category;
   final String unit;
@@ -15,6 +16,7 @@ class ConstructionMaterial {
 
   ConstructionMaterial({
     required this.id,
+    required this.userId,
     required this.name,
     required this.category,
     required this.unit,
@@ -31,6 +33,7 @@ class ConstructionMaterial {
 
   ConstructionMaterial copyWith({
     String? id,
+    String? userId,
     String? name,
     String? category,
     String? unit,
@@ -46,6 +49,7 @@ class ConstructionMaterial {
   }) {
     return ConstructionMaterial(
       id: id ?? this.id,
+      userId: userId ?? this.userId,
       name: name ?? this.name,
       category: category ?? this.category,
       unit: unit ?? this.unit,
@@ -115,6 +119,7 @@ class SampleData {
   static List<ConstructionMaterial> get materials => [
     ConstructionMaterial(
       id: '1',
+      userId: 'sample_user_1', // Thêm userId cho dữ liệu mẫu
       name: 'Xi măng PCB40',
       category: 'Vật liệu kết dính',
       unit: 'Bao',
@@ -151,6 +156,7 @@ class SampleData {
     ),
     ConstructionMaterial(
       id: '2',
+      userId: 'sample_user_1',
       name: 'Cát xây dựng',
       category: 'Vật liệu cốt liệu',
       unit: 'm³',
@@ -165,6 +171,7 @@ class SampleData {
     ),
     ConstructionMaterial(
       id: '3',
+      userId: 'sample_user_1',
       name: 'Gạch đỏ 4 lỗ',
       category: 'Vật liệu xây',
       unit: 'Viên',
@@ -179,6 +186,7 @@ class SampleData {
     ),
     ConstructionMaterial(
       id: '4',
+      userId: 'sample_user_1',
       name: 'Thép D16',
       category: 'Vật liệu cốt thép',
       unit: 'Cây',
@@ -193,6 +201,7 @@ class SampleData {
     ),
     ConstructionMaterial(
       id: '5',
+      userId: 'sample_user_1',
       name: 'Đá 1x2',
       category: 'Vật liệu cốt liệu',
       unit: 'm³',

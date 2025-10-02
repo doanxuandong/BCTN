@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/construction_material.dart';
+import '../../services/manage/material_service.dart';
+import '../../services/user/user_session.dart';
 import '../../components/material_card.dart';
 import 'add_edit_material_screen.dart';
 import 'material_detail_screen.dart';
@@ -13,10 +15,12 @@ class MaterialManagementScreen extends StatefulWidget {
 
 class _MaterialManagementScreenState extends State<MaterialManagementScreen>
     with TickerProviderStateMixin {
-  List<ConstructionMaterial> _materials = SampleData.materials;
+  List<ConstructionMaterial> _materials = const [];
+  bool _loading = true;
   String _searchQuery = '';
   String _selectedCategory = 'Tất cả';
   late TabController _tabController;
+  String? _currentUserId; // Thêm biến để lưu userId hiện tại
 
   final List<String> _categories = [
     'Tất cả',
@@ -30,6 +34,34 @@ class _MaterialManagementScreenState extends State<MaterialManagementScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _initializeUserAndLoad();
+  }
+
+  Future<void> _initializeUserAndLoad() async {
+    // Lấy userId hiện tại từ session
+    final currentUser = await UserSession.getCurrentUser();
+    if (currentUser != null) {
+      _currentUserId = currentUser['userId']?.toString();
+      if (_currentUserId != null) {
+        _load();
+        // listen realtime cho user hiện tại
+        MaterialService.listenByUserId(_currentUserId!).listen((items) {
+          if (!mounted) return;
+          setState(() {
+            _materials = items;
+            _loading = false;
+          });
+        });
+      } else {
+        setState(() {
+          _loading = false;
+        });
+      }
+    } else {
+      setState(() {
+        _loading = false;
+      });
+    }
   }
 
   @override
@@ -93,9 +125,11 @@ class _MaterialManagementScreenState extends State<MaterialManagementScreen>
         _buildSearchAndFilter(),
         _buildSummaryCards(),
         Expanded(
-          child: filteredMaterials.isEmpty
-              ? _buildEmptyState()
-              : ListView.builder(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : filteredMaterials.isEmpty
+                  ? _buildEmptyState()
+                  : ListView.builder(
                   itemCount: filteredMaterials.length,
                   itemBuilder: (context, index) {
                     final material = filteredMaterials[index];
@@ -110,6 +144,18 @@ class _MaterialManagementScreenState extends State<MaterialManagementScreen>
         ),
       ],
     );
+  }
+
+  Future<void> _load() async {
+    if (_currentUserId == null) return;
+    
+    setState(() => _loading = true);
+    final list = await MaterialService.getByUserId(_currentUserId!);
+    if (!mounted) return;
+    setState(() {
+      _materials = list;
+      _loading = false;
+    });
   }
 
   Widget _buildSearchAndFilter() {
@@ -446,15 +492,14 @@ class _MaterialManagementScreenState extends State<MaterialManagementScreen>
             child: const Text('Hủy'),
           ),
           TextButton(
-            onPressed: () {
-              setState(() {
-                _materials.removeWhere((m) => m.id == material.id);
-              });
+            onPressed: () async {
+              final ok = await MaterialService.delete(material.id);
+              if (!mounted) return;
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('Đã xóa "${material.name}"'),
-                  backgroundColor: Colors.green,
+                  content: Text(ok ? 'Đã xóa "${material.name}"' : 'Xóa thất bại'),
+                  backgroundColor: ok ? Colors.green : Colors.red,
                 ),
               );
             },

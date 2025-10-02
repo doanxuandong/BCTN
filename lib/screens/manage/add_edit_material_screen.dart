@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 import '../../models/construction_material.dart';
+import '../../services/manage/material_service.dart';
+import '../../components/image_source_dialog.dart';
+import '../../services/user/user_session.dart';
+import 'dart:io';
+// duplicate removed
 
 class AddEditMaterialScreen extends StatefulWidget {
   final ConstructionMaterial? material;
@@ -44,6 +49,8 @@ class _AddEditMaterialScreenState extends State<AddEditMaterialScreen> {
 
   String _selectedCategory = '';
   String _selectedUnit = '';
+  String? _selectedImagePath;
+  String? _existingImageUrl;
 
   @override
   void initState() {
@@ -64,6 +71,7 @@ class _AddEditMaterialScreenState extends State<AddEditMaterialScreen> {
 
     _selectedCategory = widget.material?.category ?? '';
     _selectedUnit = widget.material?.unit ?? '';
+    _existingImageUrl = widget.material?.imageUrl;
   }
 
   @override
@@ -132,6 +140,8 @@ class _AddEditMaterialScreenState extends State<AddEditMaterialScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _buildImagePicker(),
+            const SizedBox(height: 16),
             const Text(
               'Thông tin cơ bản',
               style: TextStyle(
@@ -212,6 +222,60 @@ class _AddEditMaterialScreenState extends State<AddEditMaterialScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildImagePicker() {
+    Widget preview;
+    if (_selectedImagePath != null) {
+      preview = Image.file(File(_selectedImagePath!), height: 120, fit: BoxFit.cover);
+    } else if (_existingImageUrl != null && _existingImageUrl!.isNotEmpty) {
+      preview = Image.network(_existingImageUrl!, height: 120, fit: BoxFit.cover);
+    } else {
+      preview = Container(
+        height: 120,
+        color: Colors.grey[200],
+        child: const Center(child: Icon(Icons.image, color: Colors.grey)),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ClipRRect(borderRadius: BorderRadius.circular(8), child: preview),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: _pickImage,
+          icon: const Icon(Icons.photo),
+          label: Text(_selectedImagePath != null || (_existingImageUrl != null && _existingImageUrl!.isNotEmpty) 
+              ? 'Thay đổi ảnh' 
+              : 'Chọn ảnh'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _pickImage() async {
+    final result = await ImageSourceDialog.show(
+      context: context, 
+      title: 'Chọn ảnh vật liệu',
+      currentImageUrl: _existingImageUrl,
+    );
+    
+    if (result != null) {
+      if (result == 'delete') {
+        // Xóa ảnh hiện tại
+        setState(() { 
+          _selectedImagePath = null; 
+          _existingImageUrl = null; 
+        });
+      } else if (result is File) {
+        // Chọn ảnh mới
+        setState(() { 
+          _selectedImagePath = result.path;
+          _existingImageUrl = null; // Xóa ảnh cũ khi chọn ảnh mới
+        });
+      }
+    }
   }
 
   Widget _buildStockInfoCard() {
@@ -389,20 +453,58 @@ class _AddEditMaterialScreenState extends State<AddEditMaterialScreen> {
     );
   }
 
-  void _saveMaterial() {
-    if (_formKey.currentState!.validate()) {
-      // Simulate save
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            widget.material == null
-                ? 'Đã thêm vật liệu "${_nameController.text}"'
-                : 'Đã cập nhật vật liệu "${_nameController.text}"',
-          ),
-          backgroundColor: Colors.green,
-        ),
-      );
-      Navigator.pop(context);
+  Future<void> _saveMaterial() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    // Lấy userId hiện tại
+    final currentUser = await UserSession.getCurrentUser();
+    final userId = currentUser?['userId']?.toString() ?? '';
+
+    final material = ConstructionMaterial(
+      id: widget.material?.id ?? '',
+      userId: userId, // Thêm userId vào material
+      name: _nameController.text.trim(),
+      category: _selectedCategory,
+      unit: _selectedUnit,
+      currentStock: double.parse(_currentStockController.text.trim()),
+      minStock: double.parse(_minStockController.text.trim()),
+      maxStock: double.parse(_maxStockController.text.trim()),
+      price: double.parse(_priceController.text.trim()),
+      supplier: _supplierController.text.trim(),
+      description: _descriptionController.text.trim(),
+      imageUrl: _existingImageUrl,
+      lastUpdated: DateTime.now(),
+    );
+
+    bool ok = false;
+    // Upload ảnh nếu người dùng chọn
+    if (_selectedImagePath != null) {
+      final current = await UserSession.getCurrentUser();
+      final userId = current?['userId']?.toString() ?? 'unknown';
+      final url = await MaterialService.uploadImage(userId, _selectedImagePath!);
+      if (url != null) {
+        _existingImageUrl = url;
+      }
     }
+
+    if (widget.material == null) {
+      final id = await MaterialService.create(material.copyWith(imageUrl: _existingImageUrl));
+      ok = id != null;
+    } else {
+      ok = await MaterialService.update(material.copyWith(id: widget.material!.id, imageUrl: _existingImageUrl));
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok
+            ? (widget.material == null
+                ? 'Đã thêm vật liệu "${material.name}"'
+                : 'Đã cập nhật vật liệu "${material.name}"')
+            : 'Lưu thất bại'),
+        backgroundColor: ok ? Colors.green : Colors.red,
+      ),
+    );
+    if (ok) Navigator.pop(context);
   }
 }
