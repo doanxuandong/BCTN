@@ -3,8 +3,18 @@ import '../../models/construction_material.dart';
 import '../../services/manage/material_service.dart';
 import '../../services/user/user_session.dart';
 import '../../components/material_card.dart';
+import '../../components/statistics/stock_chart_widget.dart';
+import '../../components/statistics/category_chart_widget.dart';
+import '../../components/statistics/value_trend_widget.dart';
+import '../../components/statistics/transaction_chart_widget.dart';
+import '../../components/reports/inventory_report_widget.dart';
+import '../../components/reports/value_analysis_widget.dart';
+import '../../components/filters/date_range_filter.dart';
 import 'add_edit_material_screen.dart';
 import 'material_detail_screen.dart';
+import 'import_material_screen.dart';
+import 'export_material_screen.dart';
+import 'transaction_history_screen.dart';
 
 class MaterialManagementScreen extends StatefulWidget {
   const MaterialManagementScreen({super.key});
@@ -18,9 +28,11 @@ class _MaterialManagementScreenState extends State<MaterialManagementScreen>
   List<ConstructionMaterial> _materials = const [];
   bool _loading = true;
   String _searchQuery = '';
-  String _selectedCategory = 'Tất cả';
+  String? _selectedCategory = 'Tất cả';
   late TabController _tabController;
   String? _currentUserId; // Thêm biến để lưu userId hiện tại
+  DateTime? _startDate;
+  DateTime? _endDate;
 
   final List<String> _categories = [
     'Tất cả',
@@ -85,6 +97,23 @@ class _MaterialManagementScreenState extends State<MaterialManagementScreen>
         backgroundColor: Colors.blue[700],
         foregroundColor: Colors.white,
         elevation: 0,
+        actions: [
+          IconButton(
+            onPressed: () => _navigateToTransactionHistory(),
+            icon: const Icon(Icons.history),
+            tooltip: 'Lịch sử giao dịch',
+          ),
+          IconButton(
+            onPressed: () {
+              setState(() {
+                _searchQuery = '';
+                _selectedCategory = null;
+              });
+            },
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Đặt lại',
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.white,
@@ -105,14 +134,34 @@ class _MaterialManagementScreenState extends State<MaterialManagementScreen>
           _buildReportsTab(),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _navigateToAddMaterial(),
-        backgroundColor: Colors.blue[700],
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text(
-          'Thêm vật liệu',
-          style: TextStyle(color: Colors.white),
-        ),
+      floatingActionButton: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          FloatingActionButton(
+            onPressed: () => _navigateToExportMaterial(),
+            backgroundColor: Colors.red[600],
+            heroTag: "export",
+            child: const Icon(Icons.remove, color: Colors.white),
+          ),
+          const SizedBox(height: 8),
+          FloatingActionButton(
+            onPressed: () => _navigateToImportMaterial(),
+            backgroundColor: Colors.green[600],
+            heroTag: "import",
+            child: const Icon(Icons.add, color: Colors.white),
+          ),
+          const SizedBox(height: 8),
+          FloatingActionButton.extended(
+            onPressed: () => _navigateToAddMaterial(),
+            backgroundColor: Colors.blue[700],
+            heroTag: "add",
+            icon: const Icon(Icons.add, color: Colors.white),
+            label: const Text(
+              'Thêm vật liệu',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -336,6 +385,17 @@ class _MaterialManagementScreenState extends State<MaterialManagementScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          DateRangeFilter(
+            startDate: _startDate,
+            endDate: _endDate,
+            onDateRangeChanged: (start, end) {
+              setState(() {
+                _startDate = start;
+                _endDate = end;
+              });
+            },
+          ),
+          const SizedBox(height: 16),
           const Text(
             'Thống kê tồn kho',
             style: TextStyle(
@@ -344,7 +404,7 @@ class _MaterialManagementScreenState extends State<MaterialManagementScreen>
             ),
           ),
           const SizedBox(height: 16),
-          _buildStockChart(),
+          StockChartWidget(materials: _materials),
           const SizedBox(height: 24),
           const Text(
             'Phân bố theo loại',
@@ -354,70 +414,75 @@ class _MaterialManagementScreenState extends State<MaterialManagementScreen>
             ),
           ),
           const SizedBox(height: 16),
-          _buildCategoryChart(),
+          CategoryChartWidget(materials: _materials),
+          const SizedBox(height: 24),
+          const Text(
+            'Xu hướng giá trị',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ValueTrendWidget(materials: _materials),
+          const SizedBox(height: 24),
+          const Text(
+            'Thống kê giao dịch',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (_currentUserId != null)
+            TransactionChartWidget(
+              userId: _currentUserId!,
+              startDate: _startDate,
+              endDate: _endDate,
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildStockChart() {
-    return Container(
-      height: 200,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: const Center(
-        child: Text(
-          'Biểu đồ tồn kho\n(Chức năng đang phát triển)',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: Colors.grey),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCategoryChart() {
-    return Container(
-      height: 200,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: const Center(
-        child: Text(
-          'Biểu đồ phân loại\n(Chức năng đang phát triển)',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: Colors.grey),
-        ),
-      ),
-    );
-  }
 
   Widget _buildReportsTab() {
-    return const Center(
-      child: Text(
-        'Trang báo cáo\n(Đang phát triển)',
-        textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 18, color: Colors.grey),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          DateRangeFilter(
+            startDate: _startDate,
+            endDate: _endDate,
+            onDateRangeChanged: (start, end) {
+              setState(() {
+                _startDate = start;
+                _endDate = end;
+              });
+            },
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Báo cáo tồn kho',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          InventoryReportWidget(materials: _materials),
+          const SizedBox(height: 24),
+          const Text(
+            'Phân tích giá trị',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ValueAnalysisWidget(materials: _materials),
+        ],
       ),
     );
   }
@@ -426,7 +491,7 @@ class _MaterialManagementScreenState extends State<MaterialManagementScreen>
     var filtered = _materials;
 
     // Filter by category
-    if (_selectedCategory != 'Tất cả') {
+    if (_selectedCategory != null && _selectedCategory != 'Tất cả') {
       filtered = filtered.where((m) => m.category == _selectedCategory).toList();
     }
 
@@ -458,6 +523,45 @@ class _MaterialManagementScreenState extends State<MaterialManagementScreen>
       context,
       MaterialPageRoute(
         builder: (context) => const AddEditMaterialScreen(),
+      ),
+    );
+  }
+
+  void _navigateToImportMaterial() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const ImportMaterialScreen(),
+      ),
+    ).then((refresh) {
+      if (refresh == true) {
+        _load(); // Reload materials after import
+        // Force refresh the materials list
+        _load();
+      }
+    });
+  }
+
+  void _navigateToExportMaterial() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const ExportMaterialScreen(),
+      ),
+    ).then((refresh) {
+      if (refresh == true) {
+        _load(); // Reload materials after export
+        // Force refresh the materials list
+        _load();
+      }
+    });
+  }
+
+  void _navigateToTransactionHistory() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const TransactionHistoryScreen(),
       ),
     );
   }

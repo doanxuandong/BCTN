@@ -78,18 +78,13 @@ class _SearchScreenState extends State<SearchScreen> {
       body: Column(
         children: [
           _buildTypeSelector(),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 300),
-            child: _showFilters 
-                ? Container(
-                    key: const ValueKey('filters'),
-                    constraints: const BoxConstraints(maxHeight: 400),
-                    child: SingleChildScrollView(
-                      child: _buildFilters(),
-                    ),
-                  )
-                : const SizedBox.shrink(key: ValueKey('hidden')),
-          ),
+          if (_showFilters) ...[
+            Flexible(
+              child: SingleChildScrollView(
+                child: _buildFilters(),
+              ),
+            ),
+          ],
           _buildKeywordBar(),
           const SizedBox(height: 8),
           _buildResultHeader(),
@@ -148,6 +143,7 @@ class _SearchScreenState extends State<SearchScreen> {
       color: Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
@@ -325,26 +321,32 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
           ),
           const SizedBox(height: 4),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _selectedCustomSpecialties.map((specialty) {
-              return Chip(
-                label: Text(specialty.name),
-                deleteIcon: const Icon(Icons.close, size: 18),
-                onDeleted: () {
-                  setState(() {
-                    _selectedCustomSpecialties.remove(specialty);
-                  });
-                },
-                backgroundColor: Colors.blue[100],
-                deleteIconColor: Colors.blue[700],
-                labelStyle: TextStyle(
-                  color: Colors.blue[800],
-                  fontSize: 12,
-                ),
-              );
-            }).toList(),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _selectedCustomSpecialties.map((specialty) {
+                return Chip(
+                  label: Text(
+                    specialty.name,
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  deleteIcon: const Icon(Icons.close, size: 16),
+                  onDeleted: () {
+                    setState(() {
+                      _selectedCustomSpecialties.remove(specialty);
+                    });
+                  },
+                  backgroundColor: Colors.blue[100],
+                  deleteIconColor: Colors.blue[700],
+                  labelStyle: TextStyle(
+                    color: Colors.blue[800],
+                    fontSize: 11,
+                  ),
+                );
+              }).toList(),
+            ),
           ),
         ],
       ],
@@ -484,7 +486,7 @@ class _SearchScreenState extends State<SearchScreen> {
           children: [
             Expanded(
               child: CheckboxListTile(
-                title: const Text('Giao hàng', style: TextStyle(fontSize: 14)),
+                title: const Text('Giao hàng', style: TextStyle(fontSize: 12)),
                 value: _hasDelivery,
                 onChanged: (v) {
                   setState(() {
@@ -493,11 +495,12 @@ class _SearchScreenState extends State<SearchScreen> {
                   });
                 },
                 controlAffinity: ListTileControlAffinity.leading,
+                contentPadding: EdgeInsets.zero,
               ),
             ),
             Expanded(
               child: CheckboxListTile(
-                title: const Text('Bảo hành', style: TextStyle(fontSize: 14)),
+                title: const Text('Bảo hành', style: TextStyle(fontSize: 12)),
                 value: _hasWarranty,
                 onChanged: (v) {
                   setState(() {
@@ -506,6 +509,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   });
                 },
                 controlAffinity: ListTileControlAffinity.leading,
+                contentPadding: EdgeInsets.zero,
               ),
             ),
           ],
@@ -517,13 +521,14 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget _buildKeywordBar() {
     return Container(
       color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           TextField(
             decoration: InputDecoration(
               hintText: 'Tìm theo tên, địa chỉ, chuyên ngành...',
-              prefixIcon: const Icon(Icons.search),
+              prefixIcon: const Icon(Icons.search, size: 20),
               suffixIcon: _keyword.isNotEmpty
                   ? IconButton(
                       onPressed: () {
@@ -532,7 +537,7 @@ class _SearchScreenState extends State<SearchScreen> {
                           _applyFilters();
                         });
                       },
-                      icon: const Icon(Icons.clear),
+                      icon: const Icon(Icons.clear, size: 20),
                     )
                   : null,
               border: OutlineInputBorder(
@@ -540,6 +545,7 @@ class _SearchScreenState extends State<SearchScreen> {
               ),
               filled: true,
               fillColor: Colors.grey[100],
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             ),
             onChanged: (v) {
               setState(() {
@@ -555,7 +561,7 @@ class _SearchScreenState extends State<SearchScreen> {
               });
             },
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
@@ -566,12 +572,12 @@ class _SearchScreenState extends State<SearchScreen> {
                   _showFilters = false;
                 });
               },
-              icon: const Icon(Icons.search),
-              label: const Text('Tìm kiếm'),
+              icon: const Icon(Icons.search, size: 18),
+              label: const Text('Tìm kiếm', style: TextStyle(fontSize: 14)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.blue[600],
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
+                padding: const EdgeInsets.symmetric(vertical: 10),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -585,15 +591,15 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Widget _buildResultHeader() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Row(
         children: [
           const Text(
             'Kết quả',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
           ),
           const SizedBox(width: 8),
-          Text('(${_results.length})', style: TextStyle(color: Colors.grey[600])),
+          Text('(${_results.length})', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
           const Spacer(),
           PopupMenuButton<String>(
             onSelected: (v) {
@@ -613,10 +619,11 @@ class _SearchScreenState extends State<SearchScreen> {
               PopupMenuItem(value: 'review', child: Text('Nhiều đánh giá')),
             ],
             child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: const [
-                Icon(Icons.sort, size: 18),
+                Icon(Icons.sort, size: 16),
                 SizedBox(width: 4),
-                Text('Sắp xếp'),
+                Text('Sắp xếp', style: TextStyle(fontSize: 12)),
               ],
             ),
           )

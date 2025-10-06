@@ -74,25 +74,47 @@ class MaterialService {
   }
 
   static ConstructionMaterial _fromDoc(DocumentSnapshot doc) {
-    final d = doc.data() as Map<String, dynamic>;
-    return ConstructionMaterial(
-      id: doc.id,
-      userId: d['userId'] ?? '', // Thêm userId từ Firestore
-      name: d['name'] ?? '',
-      category: d['category'] ?? '',
-      unit: d['unit'] ?? '',
-      currentStock: (d['currentStock'] ?? 0).toDouble(),
-      minStock: (d['minStock'] ?? 0).toDouble(),
-      maxStock: (d['maxStock'] ?? 0).toDouble(),
-      price: (d['price'] ?? 0).toDouble(),
-      supplier: d['supplier'] ?? '',
-      description: d['description'] ?? '',
-      imageUrl: d['imageUrl'],
-      lastUpdated: d['lastUpdated'] != null
-          ? DateTime.fromMillisecondsSinceEpoch(d['lastUpdated'])
-          : DateTime.now(),
-      transactions: const [],
-    );
+    try {
+      final d = doc.data() as Map<String, dynamic>;
+      print('Parsing material: ${doc.id}');
+      print('lastUpdated type: ${d['lastUpdated'].runtimeType}');
+      print('lastUpdated value: ${d['lastUpdated']}');
+      
+      return ConstructionMaterial(
+        id: doc.id,
+        userId: d['userId'] ?? '', // Thêm userId từ Firestore
+        name: d['name'] ?? '',
+        category: d['category'] ?? '',
+        unit: d['unit'] ?? '',
+        currentStock: (d['currentStock'] ?? 0).toDouble(),
+        minStock: (d['minStock'] ?? 0).toDouble(),
+        maxStock: (d['maxStock'] ?? 0).toDouble(),
+        price: (d['price'] ?? 0).toDouble(),
+        supplier: d['supplier'] ?? '',
+        description: d['description'] ?? '',
+        imageUrl: d['imageUrl'],
+        lastUpdated: d['lastUpdated'] != null
+            ? _parseDateTime(d['lastUpdated'])
+            : DateTime.now(),
+        transactions: const [],
+      );
+    } catch (e) {
+      print('Error parsing material ${doc.id}: $e');
+      print('Document data: ${doc.data()}');
+      rethrow;
+    }
+  }
+
+  static DateTime _parseDateTime(dynamic value) {
+    if (value is Timestamp) {
+      return value.toDate();
+    } else if (value is int) {
+      return DateTime.fromMillisecondsSinceEpoch(value);
+    } else if (value is String) {
+      return DateTime.tryParse(value) ?? DateTime.now();
+    } else {
+      return DateTime.now();
+    }
   }
 
   static Map<String, dynamic> _toMap(ConstructionMaterial m) {
