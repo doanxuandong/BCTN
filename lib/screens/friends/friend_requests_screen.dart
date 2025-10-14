@@ -60,7 +60,7 @@ class _FriendRequestsScreenState extends State<FriendRequestsScreen> with Ticker
     final success = await _friendsService.acceptFriendRequest(fromUser.id, widget.userId);
     
     if (success) {
-      _showSnackBar('Đã chấp nhận yêu cầu kết bạn từ ${fromUser.name}');
+      _showSnackBar('Đã chấp nhận yêu  cầu kết bạn từ ${fromUser.name}');
       _loadRequests();
     } else {
       _showSnackBar('Lỗi chấp nhận yêu cầu kết bạn');

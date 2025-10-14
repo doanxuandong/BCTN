@@ -28,7 +28,23 @@ class FirestoreAuthService {
       String userId = DateTime.now().millisecondsSinceEpoch.toString() + 
                      email.hashCode.abs().toString().substring(0, 6);
       
-      // Dữ liệu user mới
+      // Map type cũ sang accountType mới
+      String accountType;
+      switch (type) {
+        case '2': // Chủ thầu
+          accountType = 'UserAccountType.contractor';
+          break;
+        case '3': // Cửa hàng VLXD
+          accountType = 'UserAccountType.store';
+          break;
+        case '4': // Nhà thiết kế
+          accountType = 'UserAccountType.designer';
+          break;
+        default:
+          accountType = 'UserAccountType.general';
+      }
+
+      // Dữ liệu user mới với các trường search
       Map<String, dynamic> userData = {
         'userId': userId,
         'email': email,
@@ -38,10 +54,21 @@ class FirestoreAuthService {
         'address': address,
         'pic': '', // URL ảnh đại diện
         'sex': sex, // true = nam, false = nữ
-        'type': type, // Loại user
+        'type': type, // Loại user cũ (để tương thích)
         'userName': fullName.split(' ').last, // Tên ngắn gọn
         'createdAt': FieldValue.serverTimestamp(),
         'lastLogin': FieldValue.serverTimestamp(),
+        // Thêm các trường search mới
+        'accountType': accountType,
+        'province': '',
+        'region': '',
+        'specialties': [],
+        'rating': 0.0,
+        'reviewCount': 0,
+        'latitude': 0.0,
+        'longitude': 0.0,
+        'additionalInfo': {},
+        'isSearchable': true,
       };
       
       // Lưu vào Firestore

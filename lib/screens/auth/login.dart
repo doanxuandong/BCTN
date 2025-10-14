@@ -44,7 +44,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (result['success']) {
         // Lưu thông tin user vào session
+        print('🔐 Login successful, saving user data to session...');
+        print('User data: ${result['userData']}');
         await UserSession.saveUser(result['userData']);
+        print('✅ User data saved to session');
         
         // Chuyển vào Home sau khi đăng nhập thành công
         if (mounted) {

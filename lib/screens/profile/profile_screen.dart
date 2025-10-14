@@ -337,6 +337,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
             isOwnProfile: true,
             friends: friends.map((f) => f.id).toList(),
             followers: [],
+            // Thêm các trường mới cho search functionality - map từ type cũ
+            accountType: _parseAccountTypeFromOldType(currentUserData['type'] ?? '1'),
+            province: '',
+            region: '',
+            specialties: [],
+            rating: 0.0,
+            reviewCount: 0,
+            latitude: 0.0,
+            longitude: 0.0,
+            additionalInfo: {},
+            isSearchable: true,
+            createdAt: DateTime.now(),
           );
           _isLoading = false;
         });
@@ -623,6 +635,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
         backgroundColor: Colors.blue[700],
       ),
     );
+  }
+
+  // Helper method để parse accountType từ type cũ
+  UserAccountType _parseAccountTypeFromOldType(String oldType) {
+    switch (oldType) {
+      case '2': // Chủ thầu
+        return UserAccountType.contractor;
+      case '3': // Cửa hàng VLXD
+        return UserAccountType.store;
+      case '4': // Nhà thiết kế
+        return UserAccountType.designer;
+      default:
+        return UserAccountType.general;
+    }
   }
 }
 

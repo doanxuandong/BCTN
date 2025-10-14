@@ -1,4 +1,12 @@
 import 'package:flutter/material.dart';
+import 'dart:math';
+
+enum UserAccountType {
+  general,    // Người dùng thường
+  designer,   // Nhà thiết kế
+  contractor, // Chủ thầu
+  store,      // Cửa hàng VLXD
+}
 
 class UserProfile {
   final String id;
@@ -26,6 +34,19 @@ class UserProfile {
   final bool isOwnProfile; // true = profile của mình, false = profile người khác
   final List<String> friends; // Danh sách userId bạn bè
   final List<String> followers; // Danh sách userId người theo dõi
+  
+  // Thêm các trường cho search functionality
+  final UserAccountType accountType; // Loại tài khoản (designer, contractor, store)
+  final String province; // Tỉnh/thành phố
+  final String region; // Miền (north, central, south)
+  final List<String> specialties; // Chuyên ngành
+  final double rating; // Đánh giá
+  final int reviewCount; // Số lượng đánh giá
+  final double latitude; // Vĩ độ
+  final double longitude; // Kinh độ
+  final Map<String, dynamic> additionalInfo; // Thông tin bổ sung
+  final bool isSearchable; // Có thể tìm kiếm được không
+  final DateTime createdAt; // Ngày tạo tài khoản
 
   UserProfile({
     required this.id,
@@ -51,6 +72,17 @@ class UserProfile {
     this.isOwnProfile = false,
     this.friends = const [],
     this.followers = const [],
+    this.accountType = UserAccountType.general,
+    this.province = '',
+    this.region = '',
+    this.specialties = const [],
+    this.rating = 0.0,
+    this.reviewCount = 0,
+    this.latitude = 0.0,
+    this.longitude = 0.0,
+    this.additionalInfo = const {},
+    this.isSearchable = true,
+    required this.createdAt,
   });
 
   UserProfile copyWith({
@@ -77,6 +109,17 @@ class UserProfile {
     bool? isOwnProfile,
     List<String>? friends,
     List<String>? followers,
+    UserAccountType? accountType,
+    String? province,
+    String? region,
+    List<String>? specialties,
+    double? rating,
+    int? reviewCount,
+    double? latitude,
+    double? longitude,
+    Map<String, dynamic>? additionalInfo,
+    bool? isSearchable,
+    DateTime? createdAt,
   }) {
     return UserProfile(
       id: id ?? this.id,
@@ -102,6 +145,17 @@ class UserProfile {
       isOwnProfile: isOwnProfile ?? this.isOwnProfile,
       friends: friends ?? this.friends,
       followers: followers ?? this.followers,
+      accountType: accountType ?? this.accountType,
+      province: province ?? this.province,
+      region: region ?? this.region,
+      specialties: specialties ?? this.specialties,
+      rating: rating ?? this.rating,
+      reviewCount: reviewCount ?? this.reviewCount,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      additionalInfo: additionalInfo ?? this.additionalInfo,
+      isSearchable: isSearchable ?? this.isSearchable,
+      createdAt: createdAt ?? this.createdAt,
     );
   }
 
@@ -111,23 +165,40 @@ class UserProfile {
   // Getter methods cho các trường mới
   String get genderText => sex ? 'Nam' : 'Nữ';
   String get typeText {
-    switch (type) {
-      case '1': return 'Người dùng thường';
-      case '2': return 'Chủ thầu';
-      case '3': return 'Cửa hàng vật liệu';
-      case '4': return 'Nhà thiết kế';
-      default: return 'Người dùng thường';
+    switch (accountType) {
+      case UserAccountType.general: return 'Người dùng thường';
+      case UserAccountType.designer: return 'Nhà thiết kế';
+      case UserAccountType.contractor: return 'Chủ thầu';
+      case UserAccountType.store: return 'Cửa hàng VLXD';
     }
   }
   
   Color get typeColor {
-    switch (type) {
-      case '1': return Colors.grey; // Người dùng thường
-      case '2': return Colors.blue; // Chủ thầu
-      case '3': return Colors.green; // Cửa hàng vật liệu
-      case '4': return Colors.purple; // Nhà thiết kế
-      default: return Colors.grey;
+    switch (accountType) {
+      case UserAccountType.general: return Colors.grey;
+      case UserAccountType.designer: return Colors.purple;
+      case UserAccountType.contractor: return Colors.blue;
+      case UserAccountType.store: return Colors.green;
     }
+  }
+  
+  // Tính khoảng cách từ vị trí hiện tại (giả lập)
+  double calculateDistance(double userLat, double userLng) {
+    if (latitude == 0.0 || longitude == 0.0) return 999.0; // Không có vị trí
+    
+    // Công thức Haversine (đơn giản hóa)
+    const double earthRadius = 6371; // km
+    final double lat1Rad = userLat * (3.14159265359 / 180);
+    final double lat2Rad = latitude * (3.14159265359 / 180);
+    final double deltaLat = (latitude - userLat) * (3.14159265359 / 180);
+    final double deltaLng = (longitude - userLng) * (3.14159265359 / 180);
+    
+    final double a = sin(deltaLat / 2) * sin(deltaLat / 2) +
+        cos(lat1Rad) * cos(lat2Rad) *
+        sin(deltaLng / 2) * sin(deltaLng / 2);
+    final double c = 2 * asin(sqrt(a));
+    
+    return earthRadius * c;
   }
   
   // Kiểm tra các trường có dữ liệu hay không
@@ -272,5 +343,20 @@ class SampleUserData {
       transactions: 324,
     ),
     privacy: PrivacySettings(),
+    accountType: UserAccountType.contractor,
+    province: 'TP. Hồ Chí Minh',
+    region: 'south',
+    specialties: ['Kiến trúc', 'Kết cấu', 'Hoàn thiện'],
+    rating: 4.6,
+    reviewCount: 128,
+    latitude: 10.8231,
+    longitude: 106.6297,
+    additionalInfo: {
+      'license': 'A1',
+      'experience': '5 năm',
+      'employees': 50,
+      'project_capacity': 'Trung bình',
+    },
+    createdAt: DateTime(2023, 1, 15),
   );
 }

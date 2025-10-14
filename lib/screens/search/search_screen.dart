@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
 import '../../models/search_models.dart';
+import '../../models/user_profile.dart';
 import '../../components/account_card.dart';
+import '../../services/search/search_notification_service.dart';
+import '../../services/user/user_profile_service.dart';
+import '../../utils/migrate_user_profiles.dart';
+import 'search_results_screen.dart';
+import 'search_notifications_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -33,8 +39,11 @@ class _SearchScreenState extends State<SearchScreen> {
   bool _hasDelivery = false;
   bool _hasWarranty = false;
 
-  List<SearchAccount> _results = SearchData.accounts;
+  List<SearchAccount> _results = [];
+  List<UserProfile> _realUsers = []; // Dữ liệu thật từ Firebase
   bool _showFilters = true; // Điều khiển hiển thị bộ lọc
+  int _unreadNotificationsCount = 0;
+  bool _isLoadingRealUsers = false;
 
   @override
   void initState() {
@@ -42,6 +51,8 @@ class _SearchScreenState extends State<SearchScreen> {
     _selectedProvince = null;
     _selectedRegion = null;
     _specialtiesController = TextEditingController(text: _customSpecialties);
+    _listenToNotifications();
+    _loadRealUsers(); // Load dữ liệu thật từ Firebase
   }
 
   @override
@@ -59,6 +70,40 @@ class _SearchScreenState extends State<SearchScreen> {
         backgroundColor: Colors.blue[700],
         foregroundColor: Colors.white,
         actions: [
+          Stack(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications),
+                onPressed: _openNotifications,
+                tooltip: 'Thông báo tìm kiếm',
+              ),
+              if (_unreadNotificationsCount > 0)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 16,
+                      minHeight: 16,
+                    ),
+                    child: Text(
+                      '$_unreadNotificationsCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
+          ),
           IconButton(
             icon: Icon(_showFilters ? Icons.filter_list_off : Icons.filter_list),
             onPressed: () {
@@ -566,16 +611,16 @@ class _SearchScreenState extends State<SearchScreen> {
             width: double.infinity,
             child: ElevatedButton.icon(
               onPressed: () {
-                _applyFilters();
+                _performRealTimeSearch();
                 // Ẩn bộ lọc sau khi tìm kiếm
                 setState(() {
                   _showFilters = false;
                 });
               },
               icon: const Icon(Icons.search, size: 18),
-              label: const Text('Tìm kiếm', style: TextStyle(fontSize: 14)),
+              label: const Text('Tìm kiếm thực', style: TextStyle(fontSize: 14)),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue[600],
+                backgroundColor: Colors.green[600],
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 shape: RoundedRectangleBorder(
@@ -660,7 +705,8 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   void _applyFilters() {
-    var data = SearchData.accounts;
+    // Sử dụng dữ liệu thật từ Firebase nếu có, nếu không thì dùng dữ liệu tĩnh
+    var data = _realUsers.isNotEmpty ? _convertUserProfilesToSearchAccounts(_realUsers) : SearchData.accounts;
 
     data = data.where((a) => a.type == _selectedType).toList();
 
@@ -756,5 +802,247 @@ class _SearchScreenState extends State<SearchScreen> {
       
       _applyFilters();
     });
+  }
+
+  /// Lắng nghe thông báo tìm kiếm
+  void _listenToNotifications() {
+    SearchNotificationService.getUnreadCount().listen((count) {
+      if (mounted) {
+        setState(() {
+          _unreadNotificationsCount = count;
+        });
+      }
+    });
+  }
+
+  /// Mở màn hình thông báo
+  void _openNotifications() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const SearchNotificationsScreen(),
+      ),
+    );
+  }
+
+  /// Thực hiện tìm kiếm thời gian thực
+  void _performRealTimeSearch() {
+    // Chuyển đổi AccountType sang UserAccountType
+    UserAccountType? userAccountType;
+    switch (_selectedType) {
+      case AccountType.designer:
+        userAccountType = UserAccountType.designer;
+        break;
+      case AccountType.contractor:
+        userAccountType = UserAccountType.contractor;
+        break;
+      case AccountType.store:
+        userAccountType = UserAccountType.store;
+        break;
+    }
+
+    // Chuyển đổi specialties
+    List<String> specialties = _selectedCustomSpecialties.map((s) => s.name).toList();
+
+    // Vị trí giả lập (TP.HCM)
+    const double userLat = 10.8231;
+    const double userLng = 106.6297;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SearchResultsScreen(
+          accountType: userAccountType,
+          province: _selectedProvince?.name,
+          region: _selectedRegion?.toString().split('.').last,
+          specialties: specialties,
+          minRating: 0.0, // Có thể thêm filter rating sau
+          userLat: userLat,
+          userLng: userLng,
+          maxDistanceKm: _radiusKm,
+          keyword: _keyword.isNotEmpty ? _keyword : null,
+        ),
+      ),
+    );
+  }
+
+  /// Migrate user profiles để thêm các trường search mới
+  void _migrateUserProfiles() async {
+    // Hiển thị dialog xác nhận
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Cập nhật dữ liệu tài khoản'),
+        content: const Text(
+          'Thao tác này sẽ cập nhật tất cả tài khoản để hỗ trợ tìm kiếm. '
+          'Bạn có chắc muốn tiếp tục?'
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Hủy'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Cập nhật'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      // Hiển thị loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Đang cập nhật dữ liệu...'),
+            ],
+          ),
+        ),
+      );
+
+      try {
+        await UserProfileMigration.migrateAllUserProfiles();
+        
+        // Đóng loading dialog
+        Navigator.pop(context);
+        
+        // Hiển thị thông báo thành công
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cập nhật dữ liệu tài khoản thành công!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } catch (e) {
+        // Đóng loading dialog
+        Navigator.pop(context);
+        
+        // Hiển thị thông báo lỗi
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi cập nhật: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Load dữ liệu thật từ Firebase
+  void _loadRealUsers() async {
+    setState(() {
+      _isLoadingRealUsers = true;
+    });
+
+    try {
+      print('Loading real users from Firebase...');
+      
+      // Lấy tất cả user profiles có thể tìm kiếm
+      final users = await UserProfileService.searchProfiles();
+      
+      print('Loaded ${users.length} real users from Firebase');
+      for (var user in users) {
+        print('- ${user.name} (${user.accountType}) - ${user.province}');
+      }
+      
+      setState(() {
+        _realUsers = users;
+        _isLoadingRealUsers = false;
+      });
+
+      // Apply filters với dữ liệu mới
+      _applyFilters();
+      
+      // Hiển thị thông báo
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Đã tải ${users.length} tài khoản thật từ Firebase'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error loading real users: $e');
+      setState(() {
+        _isLoadingRealUsers = false;
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi tải dữ liệu: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Debug search notifications
+  void _debugSearchNotifications() async {
+    await SearchNotificationService.debugSearchNotifications();
+  }
+
+  /// Convert UserProfile sang SearchAccount để hiển thị
+  List<SearchAccount> _convertUserProfilesToSearchAccounts(List<UserProfile> profiles) {
+    return profiles.map((profile) {
+      // Map UserAccountType sang AccountType
+      AccountType accountType;
+      switch (profile.accountType) {
+        case UserAccountType.designer:
+          accountType = AccountType.designer;
+          break;
+        case UserAccountType.contractor:
+          accountType = AccountType.contractor;
+          break;
+        case UserAccountType.store:
+          accountType = AccountType.store;
+          break;
+        default:
+          accountType = AccountType.designer; // Default
+      }
+
+      // Map province
+      Province? province;
+      if (profile.province.isNotEmpty) {
+        province = SearchData.provinces.firstWhere(
+          (p) => p.name.contains(profile.province) || profile.province.contains(p.name),
+          orElse: () => SearchData.provinces.first,
+        );
+      } else {
+        province = SearchData.provinces.first;
+      }
+
+      // Map specialties
+      List<Specialty> specialties = profile.specialties.map((s) {
+        return SearchData.specialties.firstWhere(
+          (sp) => sp.name.toLowerCase().contains(s.toLowerCase()) || s.toLowerCase().contains(sp.name.toLowerCase()),
+          orElse: () => SearchData.specialties.first,
+        );
+      }).toList();
+
+      return SearchAccount(
+        id: profile.id,
+        name: profile.name,
+        type: accountType,
+        address: profile.address.isNotEmpty ? profile.address : profile.location,
+        province: province,
+        specialties: specialties.isNotEmpty ? specialties : [SearchData.specialties.first],
+        rating: profile.rating,
+        reviewCount: profile.reviewCount,
+        distanceKm: profile.latitude != 0.0 && profile.longitude != 0.0 
+            ? profile.calculateDistance(10.8231, 106.6297) // TP.HCM coordinates
+            : 5.0, // Default distance
+        avatarUrl: profile.displayAvatar,
+        additionalInfo: profile.additionalInfo,
+      );
+    }).toList();
   }
 }

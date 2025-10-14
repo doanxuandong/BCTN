@@ -136,7 +136,52 @@ class ProfileService {
       isOwnProfile: isOwnProfile,
       friends: friends,
       followers: followers,
+      // Thêm các trường mới cho search functionality
+      accountType: _parseAccountType(userData['accountType'], userData['type']),
+      province: userData['province'] ?? '',
+      region: userData['region'] ?? '',
+      specialties: List<String>.from(userData['specialties'] ?? []),
+      rating: (userData['rating'] ?? 0.0).toDouble(),
+      reviewCount: userData['reviewCount'] ?? 0,
+      latitude: (userData['latitude'] ?? 0.0).toDouble(),
+      longitude: (userData['longitude'] ?? 0.0).toDouble(),
+      additionalInfo: Map<String, dynamic>.from(userData['additionalInfo'] ?? {}),
+      isSearchable: userData['isSearchable'] ?? true,
+      createdAt: userData['createdAt'] != null 
+          ? (userData['createdAt'] as Timestamp).toDate()
+          : DateTime.now(),
     );
+  }
+
+  // Parse UserAccountType từ string hoặc type cũ
+  UserAccountType _parseAccountType(String? value, String? oldType) {
+    // Nếu có accountType mới, sử dụng nó
+    if (value != null) {
+      switch (value) {
+        case 'UserAccountType.designer':
+          return UserAccountType.designer;
+        case 'UserAccountType.contractor':
+          return UserAccountType.contractor;
+        case 'UserAccountType.store':
+          return UserAccountType.store;
+      }
+    }
+    
+    // Nếu không có, map từ type cũ
+    if (oldType != null) {
+      switch (oldType) {
+        case '2': // Chủ thầu
+          return UserAccountType.contractor;
+        case '3': // Cửa hàng VLXD
+          return UserAccountType.store;
+        case '4': // Nhà thiết kế
+          return UserAccountType.designer;
+        default:
+          return UserAccountType.general;
+      }
+    }
+    
+    return UserAccountType.general;
   }
   
   // Tìm kiếm người dùng
