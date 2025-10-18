@@ -806,7 +806,9 @@ class _SearchScreenState extends State<SearchScreen> {
 
   /// Lắng nghe thông báo tìm kiếm
   void _listenToNotifications() {
+    print('🔍 SearchScreen._listenToNotifications() called');
     SearchNotificationService.getUnreadCount().listen((count) {
+      print('🔍 SearchScreen - Unread count updated: $count');
       if (mounted) {
         setState(() {
           _unreadNotificationsCount = count;

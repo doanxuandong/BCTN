@@ -79,12 +79,17 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   Future<void> _sendNotificationsToAll() async {
     if (_searchResults.isEmpty) return;
 
+    print('🔍 SearchResultsScreen._sendNotificationsToAll() called');
+    print('🔍 _searchResults.length: ${_searchResults.length}');
+
     setState(() {
       _isSendingNotifications = true;
     });
 
     try {
       final currentUser = await UserSession.getCurrentUser();
+      print('🔍 currentUser from UserSession: $currentUser');
+      
       if (currentUser == null) {
         throw Exception('Không tìm thấy thông tin người dùng');
       }
@@ -93,10 +98,15 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       final senderName = currentUser['name'] ?? 'Người dùng';
       final searchCriteria = _buildSearchCriteriaText();
       
+      print('🔍 senderId: $senderId');
+      print('🔍 senderName: $senderName');
+      print('🔍 searchCriteria: $searchCriteria');
+      
       int successCount = 0;
       
       // Gửi thông báo đến từng người dùng
       for (final profile in _searchResults) {
+        print('🔍 Sending notification to: ${profile.name} (${profile.id})');
         try {
           final success = await SearchNotificationService.sendSearchNotification(
             receiverId: profile.id,
@@ -109,11 +119,16 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
           
           if (success) {
             successCount++;
+            print('✅ Notification sent successfully to ${profile.name}');
+          } else {
+            print('❌ Failed to send notification to ${profile.name}');
           }
         } catch (e) {
-          print('Error sending notification to ${profile.name}: $e');
+          print('❌ Error sending notification to ${profile.name}: $e');
         }
       }
+
+      print('🔍 Total notifications sent: $successCount/${_searchResults.length}');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -124,6 +139,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         );
       }
     } catch (e) {
+      print('❌ Error in _sendNotificationsToAll: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -495,7 +511,12 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
   Future<void> _sendNotificationToUser(UserProfile profile) async {
     try {
+      print('🔍 SearchResultsScreen._sendNotificationToUser() called');
+      print('🔍 Profile: ${profile.name} (${profile.id})');
+      
       final currentUser = await UserSession.getCurrentUser();
+      print('🔍 currentUser from UserSession: $currentUser');
+      
       if (currentUser == null) {
         throw Exception('Không tìm thấy thông tin người dùng');
       }
@@ -503,6 +524,10 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       final senderId = currentUser['userId'] ?? '';
       final senderName = currentUser['name'] ?? 'Người dùng';
       final searchCriteria = _buildSearchCriteriaText();
+      
+      print('🔍 senderId: $senderId');
+      print('🔍 senderName: $senderName');
+      print('🔍 searchCriteria: $searchCriteria');
       
       final success = await SearchNotificationService.sendSearchNotification(
         receiverId: profile.id,
@@ -512,6 +537,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         senderId: senderId,
         senderName: senderName,
       );
+
+      print('🔍 Notification sent result: $success');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -526,6 +553,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         );
       }
     } catch (e) {
+      print('❌ Error in _sendNotificationToUser: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

@@ -11,6 +11,13 @@ class UserSession {
   
   // Lấy thông tin user hiện tại
   static Future<Map<String, dynamic>?> getCurrentUser() async {
+    print('🔍 UserSession.getCurrentUser() called');
+    print('🔍 _isLoggedIn: $_isLoggedIn');
+    print('🔍 _currentUser: $_currentUser');
+    if (_currentUser != null) {
+      print('🔍 userId: ${_currentUser!['userId']}');
+      print('🔍 name: ${_currentUser!['name']}');
+    }
     return _currentUser;
   }
   
