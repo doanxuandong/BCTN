@@ -44,7 +44,7 @@ class SearchNotificationService {
       if (currentUser == null) {
         print('❌ currentUser is null');
         return null;
-      }
+      }    
       
       final userId = currentUser['userId']?.toString();
       print('🔍 extracted userId: $userId');

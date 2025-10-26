@@ -4,6 +4,7 @@ import '../../models/user_profile.dart';
 import '../../components/account_card.dart';
 import '../../services/search/search_notification_service.dart';
 import '../../services/user/user_profile_service.dart';
+import '../../services/location/location_service.dart';
 import '../../utils/migrate_user_profiles.dart';
 import 'search_results_screen.dart';
 import 'search_notifications_screen.dart';
@@ -828,44 +829,94 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   /// Thực hiện tìm kiếm thời gian thực
-  void _performRealTimeSearch() {
-    // Chuyển đổi AccountType sang UserAccountType
-    UserAccountType? userAccountType;
-    switch (_selectedType) {
-      case AccountType.designer:
-        userAccountType = UserAccountType.designer;
-        break;
-      case AccountType.contractor:
-        userAccountType = UserAccountType.contractor;
-        break;
-      case AccountType.store:
-        userAccountType = UserAccountType.store;
-        break;
+  Future<void> _performRealTimeSearch() async {
+    // Hiển thị loading
+    if (mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
     }
 
-    // Chuyển đổi specialties
-    List<String> specialties = _selectedCustomSpecialties.map((s) => s.name).toList();
+    try {
+      // Lấy vị trí hiện tại của người dùng
+      final position = await LocationService.getCurrentLocation();
+      double userLat = 10.8231; // Default: TP.HCM
+      double userLng = 106.6297;
 
-    // Vị trí giả lập (TP.HCM)
-    const double userLat = 10.8231;
-    const double userLng = 106.6297;
+      if (position != null) {
+        userLat = position.latitude;
+        userLng = position.longitude;
+        print('✅ Got user location: $userLat, $userLng');
+      } else {
+        print('⚠️ Could not get location, using default (TP.HCM)');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Không lấy được vị trí. Sử dụng vị trí mặc định.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => SearchResultsScreen(
-          accountType: userAccountType,
-          province: _selectedProvince?.name,
-          region: _selectedRegion?.toString().split('.').last,
-          specialties: specialties,
-          minRating: 0.0, // Có thể thêm filter rating sau
-          userLat: userLat,
-          userLng: userLng,
-          maxDistanceKm: _radiusKm,
-          keyword: _keyword.isNotEmpty ? _keyword : null,
-        ),
-      ),
-    );
+      // Chuyển đổi AccountType sang UserAccountType
+      UserAccountType? userAccountType;
+      switch (_selectedType) {
+        case AccountType.designer:
+          userAccountType = UserAccountType.designer;
+          break;
+        case AccountType.contractor:
+          userAccountType = UserAccountType.contractor;
+          break;
+        case AccountType.store:
+          userAccountType = UserAccountType.store;
+          break;
+      }
+
+      // Chuyển đổi specialties
+      List<String> specialties = _selectedCustomSpecialties.map((s) => s.name).toList();
+
+      // Đóng loading
+      if (mounted) {
+        Navigator.pop(context);
+      }
+
+      // Navigate to search results
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => SearchResultsScreen(
+              accountType: userAccountType,
+              province: _selectedProvince?.name,
+              region: _selectedRegion?.toString().split('.').last,
+              specialties: specialties,
+              minRating: 0.0, // Có thể thêm filter rating sau
+              userLat: userLat,
+              userLng: userLng,
+              maxDistanceKm: _radiusKm,
+              keyword: _keyword.isNotEmpty ? _keyword : null,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ Error in _performRealTimeSearch: $e');
+      // Đóng loading nếu có lỗi
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi tìm kiếm: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   /// Migrate user profiles để thêm các trường search mới

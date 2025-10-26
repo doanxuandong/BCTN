@@ -37,11 +37,13 @@ class AutoMessageService {
         originalSearchCriteria,
       );
 
-      // Tạo chat ID tương thích với ChatService
-      final participants = [senderId, receiverId]..sort();
+      // Tạo chat ID tương thích với ChatService (SẮP XẾP TRƯỚC)
+      final participants = [senderId, receiverId];
+      participants.sort(); // Sắp xếp để đồng bộ
       final chatId = participants.join('_');
       
       print('💬 Chat ID: $chatId');
+      print('💬 Participants sorted: $participants');
 
       // Lưu tin nhắn vào Firestore
       print('📂 Creating message document...');
@@ -138,9 +140,18 @@ Hãy kết nối để chúng ta có thể trao đổi chi tiết hơn nhé!
     String lastMessage,
   ) async {
     try {
+      print('📋 Creating/updating chat: $chatId');
+      print('📋 Participants: $senderId, $receiverId');
+      
+      // Sắp xếp participants để đồng bộ với ChatService
+      final participants = [senderId, receiverId];
+      participants.sort(); // Sắp xếp để đồng bộ
+      
+      print('📋 Participants after sort: $participants');
+      
       final chatData = {
         'id': chatId,
-        'participants': [senderId, receiverId],
+        'participants': participants, // Sắp xếp thứ tự
         'lastMessage': lastMessage,
         'lastMessageTime': DateTime.now().millisecondsSinceEpoch,
         'lastMessageType': 'text',
@@ -151,12 +162,15 @@ Hãy kết nối để chúng ta có thể trao đổi chi tiết hơn nhé!
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
+      print('📝 Saving chat data: $chatData');
       await _firestore
           .collection('chats')
           .doc(chatId)
           .set(chatData, SetOptions(merge: true));
+      
+      print('✅ Chat saved successfully');
     } catch (e) {
-      print('Error creating/updating chat: $e');
+      print('❌ Error creating/updating chat: $e');
     }
   }
 

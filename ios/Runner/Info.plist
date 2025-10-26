@@ -45,5 +45,10 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- Location permissions -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>BuilderConnect cần truy cập vị trí của bạn để tìm kiếm người dùng gần bạn</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>BuilderConnect cần truy cập vị trí của bạn để tìm kiếm người dùng gần bạn</string>
 </dict>
 </plist>

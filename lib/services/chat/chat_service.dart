@@ -17,17 +17,22 @@ class ChatService {
       final userId = currentUser['userId']?.toString();
       if (userId == null) return [];
 
+      print('🔍 Getting chats for userId: $userId');
+      
       final snapshot = await _firestore
           .collection(_chatsCollection)
           .where('participants', arrayContains: userId)
-          .orderBy('lastMessageTime', descending: true)
           .get();
+
+      print('📊 Found ${snapshot.docs.length} chats');
 
       final chats = <Chat>[];
       for (var doc in snapshot.docs) {
         final chatData = doc.data();
         final participants = List<String>.from(chatData['participants'] ?? []);
         final otherUserId = participants.firstWhere((id) => id != userId, orElse: () => '');
+        
+        print('🔍 Chat ID: ${doc.id}, otherUserId: $otherUserId');
         
         if (otherUserId.isNotEmpty) {
           // Lấy thông tin người dùng khác
@@ -48,14 +53,19 @@ class ChatService {
               ),
               lastMessageSender: chatData['lastMessageSender'],
             );
+            print('✅ Added chat: ${chat.name}');
             chats.add(chat);
           }
         }
       }
 
+      // Sort by last message time manually
+      chats.sort((a, b) => b.lastMessageTime.compareTo(a.lastMessageTime));
+      
+      print('✅ Returning ${chats.length} chats');
       return chats;
     } catch (e) {
-      print('Error getting chats: $e');
+      print('❌ Error getting chats: $e');
       return [];
     }
   }
@@ -64,6 +74,7 @@ class ChatService {
   static Stream<List<Chat>> listenToChats() {
     return _firestore
         .collection(_chatsCollection)
+        .where('participants', arrayContains: '') // Không filter, lấy tất cả
         .snapshots()
         .asyncMap((snapshot) async {
       final currentUser = await UserSession.getCurrentUser();
@@ -119,22 +130,28 @@ class ChatService {
       final userId = currentUser['userId']?.toString();
       if (userId == null) return null;
 
+      // Tạo chatId tương thích với AutoMessageService
+      final participantsList = [userId, otherUserId];
+      participantsList.sort(); // Sắp xếp
+      final chatId = participantsList.join('_');
+      
+      print('🔍 Creating chat with ID: $chatId');
+      print('🔍 Participants sorted: $participantsList');
+
       // Kiểm tra xem đã có chat chưa
-      final existingChat = await _firestore
+      final existingChatDoc = await _firestore
           .collection(_chatsCollection)
-          .where('participants', arrayContains: userId)
+          .doc(chatId)
           .get();
 
-      for (var doc in existingChat.docs) {
-        final participants = List<String>.from(doc.data()['participants'] ?? []);
-        if (participants.contains(otherUserId)) {
-          return doc.id; // Chat đã tồn tại
-        }
+      if (existingChatDoc.exists) {
+        print('✅ Chat already exists: $chatId');
+        return chatId; // Chat đã tồn tại
       }
 
-      // Tạo chat mới
+      // Tạo chat mới với chatId cố định
       final chatData = {
-        'participants': [userId, otherUserId],
+        'participants': participantsList, // Sử dụng participants đã sort
         'lastMessage': '',
         'lastMessageTime': DateTime.now().millisecondsSinceEpoch,
         'lastMessageType': MessageType.text.toString().split('.').last,
@@ -146,11 +163,11 @@ class ChatService {
         'createdAt': DateTime.now().millisecondsSinceEpoch,
       };
 
-      final docRef = await _firestore.collection(_chatsCollection).add(chatData);
-      print('Chat created successfully: ${docRef.id}');
-      return docRef.id;
+      await _firestore.collection(_chatsCollection).doc(chatId).set(chatData);
+      print('✅ Chat created successfully: $chatId');
+      return chatId;
     } catch (e) {
-      print('Error creating chat: $e');
+      print('❌ Error creating chat: $e');
       return null;
     }
   }

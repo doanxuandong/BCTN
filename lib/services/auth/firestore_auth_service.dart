@@ -12,6 +12,8 @@ class FirestoreAuthService {
     String address = '',
     bool sex = true, // true = nam, false = nữ
     String type = '1', // 1 = thường, 2 = chủ thầu, 3 = cửa hàng vật liệu, 4 = nhà thiết kế
+    double? latitude,
+    double? longitude,
   }) async {
     try {
       // Kiểm tra email đã tồn tại chưa
@@ -65,8 +67,8 @@ class FirestoreAuthService {
         'specialties': [],
         'rating': 0.0,
         'reviewCount': 0,
-        'latitude': 0.0,
-        'longitude': 0.0,
+        'latitude': latitude ?? 0.0,
+        'longitude': longitude ?? 0.0,
         'additionalInfo': {},
         'isSearchable': true,
       };

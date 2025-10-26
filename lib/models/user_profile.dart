@@ -47,6 +47,7 @@ class UserProfile {
   final Map<String, dynamic> additionalInfo; // Thông tin bổ sung
   final bool isSearchable; // Có thể tìm kiếm được không
   final DateTime createdAt; // Ngày tạo tài khoản
+  double distanceKm; // Khoảng cách tính bằng km (tạm thời, không final)
 
   UserProfile({
     required this.id,
@@ -83,6 +84,7 @@ class UserProfile {
     this.additionalInfo = const {},
     this.isSearchable = true,
     required this.createdAt,
+    this.distanceKm = 0.0,
   });
 
   UserProfile copyWith({

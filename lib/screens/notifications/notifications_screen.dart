@@ -113,9 +113,22 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   void _navigateToChat(NotificationModel notification) async {
+    print('🔍 Navigating to chat from notification');
+    print('🔍 Notification data: ${notification.data}');
+    
     final chatId = notification.data?['chatId']?.toString();
-    if (chatId != null) {
-      // Tạo chat nếu chưa có
+    print('🔍 ChatId from notification: $chatId');
+    
+    if (chatId != null && chatId.isNotEmpty) {
+      print('✅ Using chatId from notification: $chatId');
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => ChatDetailScreen(chatId: chatId),
+        ),
+      );
+    } else if (notification.senderId != null) {
+      print('⚠️ No chatId found, creating new chat with senderId: ${notification.senderId}');
+      // Tạo chat mới nếu không có chatId trong notification
       final createdChatId = await ChatService.createChat(notification.senderId!);
       if (createdChatId != null) {
         Navigator.of(context).push(
@@ -123,7 +136,23 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             builder: (context) => ChatDetailScreen(chatId: createdChatId),
           ),
         );
+      } else {
+        print('❌ Failed to create chat');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Không thể mở chat'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
+    } else {
+      print('❌ No chatId and no senderId');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Không tìm thấy thông tin chat'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 

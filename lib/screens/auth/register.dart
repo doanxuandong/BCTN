@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../services/auth/firestore_auth_service.dart';
+import '../../services/location/location_service.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -21,6 +23,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _isLoading = false;
   bool _isMale = true; // true = nam, false = nữ
   String _userType = '1'; // 1 = thường, 2 = vip, 3 = admin
+  double? _latitude;
+  double? _longitude;
+  Position? _currentPosition;
 
   @override
   void dispose() {
@@ -31,6 +36,34 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _phoneController.dispose();
     _addressController.dispose();
     super.dispose();
+  }
+
+  Future<void> _getCurrentLocation() async {
+    final position = await LocationService.getCurrentLocation();
+    if (position != null) {
+      setState(() {
+        _currentPosition = position;
+        _latitude = position.latitude;
+        _longitude = position.longitude;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Đã lấy vị trí hiện tại'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Không thể lấy vị trí. Vui lòng thử lại.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _handleRegister() async {
@@ -49,6 +82,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
         address: _addressController.text.trim(),
         sex: _isMale,
         type: _userType,
+        latitude: _latitude,
+        longitude: _longitude,
       );
 
       if (mounted) {
@@ -213,6 +248,58 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   }
                   return null;
                 },
+              ),
+              const SizedBox(height: 16),
+              
+              // Vị trí GPS
+              Card(
+                color: _currentPosition != null ? Colors.green.shade50 : Colors.blue.shade50,
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            _currentPosition != null ? Icons.check_circle : Icons.location_searching,
+                            color: _currentPosition != null ? Colors.green : Colors.blue,
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Vị trí hiện tại',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _currentPosition != null
+                            ? 'Lat: ${_latitude?.toStringAsFixed(6)}, Long: ${_longitude?.toStringAsFixed(6)}'
+                            : 'Chưa lấy vị trí',
+                        style: TextStyle(
+                          color: _currentPosition != null ? Colors.green.shade700 : Colors.grey.shade600,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _getCurrentLocation,
+                          icon: const Icon(Icons.my_location),
+                          label: Text(_currentPosition != null ? 'Lấy lại vị trí' : 'Lấy vị trí hiện tại'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _currentPosition != null ? Colors.blue : Colors.green,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
               const SizedBox(height: 16),
               

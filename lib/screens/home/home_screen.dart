@@ -8,7 +8,7 @@ import '../../models/post_model.dart';
 import '../manage/material_management_screen.dart';
 import '../profile/profile_screen.dart';
 import '../search/search_screen.dart';
-import '../chat/chat_list_screen.dart';
+import '../chat/chat_conversations_screen.dart';
 import '../auth/login.dart';
 import '../social/create_post_screen.dart';
 import '../../services/user/user_session.dart';
@@ -184,7 +184,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildChatTab() {
-    return const ChatListScreen();
+    return const ChatConversationsScreen();
   }
 
   Widget _buildSearchTab() {

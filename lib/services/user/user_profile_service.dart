@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/user_profile.dart';
 import '../profile/profile_service.dart';
+import '../location/location_service.dart';
 
 class UserProfileService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -170,6 +171,31 @@ class UserProfileService {
           profile.company.toLowerCase().contains(lowerKeyword)
         ).toList();
         print('After keyword filter: ${profiles.length} profiles');
+      }
+      
+      // Filter by distance if userLat and userLng are provided
+      if (userLat != null && userLng != null && maxDistanceKm != null && maxDistanceKm > 0) {
+        profiles = profiles.where((profile) {
+          // Nếu profile có vị trí (latitude, longitude != 0)
+          if (profile.latitude != 0 && profile.longitude != 0) {
+            final distance = LocationService.calculateDistance(
+              userLat,
+              userLng,
+              profile.latitude,
+              profile.longitude,
+            );
+            profile.distanceKm = distance; // Lưu khoảng cách vào profile
+            return distance <= maxDistanceKm;
+          }
+          // Nếu profile không có vị trí, vẫn hiển thị
+          return true;
+        }).toList();
+        print('After distance filter: ${profiles.length} profiles');
+      }
+      
+      // Sort by distance if we have location filters
+      if (userLat != null && userLng != null && maxDistanceKm != null) {
+        profiles.sort((a, b) => a.distanceKm.compareTo(b.distanceKm));
       }
       
       // Limit results
