@@ -68,26 +68,43 @@ class StockChartWidget extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Max stock bar (light blue)
-                Container(
-                  height: 80 * maxRatio,
-                  decoration: BoxDecoration(
-                    color: Colors.blue[100],
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                // Chart area with fixed height to avoid overflow
+                SizedBox(
+                  height: 120,
+                  child: Stack(
+                    alignment: Alignment.bottomCenter,
+                    children: [
+                      // Max stock bar (background)
+                      Align(
+                        alignment: Alignment.bottomCenter,
+                        child: Container(
+                          height: 120 * maxRatio,
+                          decoration: BoxDecoration(
+                            color: Colors.blue[100],
+                            borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                          ),
+                        ),
+                      ),
+                      // Current stock bar (foreground)
+                      Align(
+                        alignment: Alignment.bottomCenter,
+                        child: Container(
+                          height: 120 * currentRatio,
+                          decoration: BoxDecoration(
+                            color: _getStockColor(material.stockStatus),
+                            borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                          ),
+                        ),
+                      ),
+                      // Min stock line (fixed at 4px height)
+                      Positioned(
+                        bottom: 120 * (material.minStock / maxStock) - 1,
+                        left: 0,
+                        right: 0,
+                        child: Container(height: 2, color: Colors.red),
+                      ),
+                    ],
                   ),
-                ),
-                // Current stock bar (blue)
-                Container(
-                  height: 80 * currentRatio,
-                  decoration: BoxDecoration(
-                    color: _getStockColor(material.stockStatus),
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
-                  ),
-                ),
-                // Min stock line
-                Container(
-                  height: 2,
-                  color: Colors.red,
                 ),
                 const SizedBox(height: 4),
                 Text(

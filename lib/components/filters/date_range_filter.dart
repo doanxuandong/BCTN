@@ -84,50 +84,41 @@ class _DateRangeFilterState extends State<DateRangeFilter> {
             ],
           ),
           const SizedBox(height: 16),
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _selectToday,
-                  icon: const Icon(Icons.today, size: 16),
-                  label: const Text('Hôm nay'),
-                ),
+              _quickButton(
+                icon: Icons.today,
+                label: 'Hôm nay',
+                onPressed: _selectToday,
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _selectThisWeek,
-                  icon: const Icon(Icons.date_range, size: 16),
-                  label: const Text('Tuần này'),
-                ),
+              _quickButton(
+                icon: Icons.date_range,
+                label: 'Tuần này',
+                onPressed: _selectThisWeek,
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _selectThisMonth,
-                  icon: const Icon(Icons.calendar_month, size: 16),
-                  label: const Text('Tháng này'),
-                ),
+              _quickButton(
+                icon: Icons.calendar_month,
+                label: 'Tháng này',
+                onPressed: _selectThisMonth,
               ),
             ],
           ),
           const SizedBox(height: 8),
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _selectLastMonth,
-                  icon: const Icon(Icons.keyboard_arrow_left, size: 16),
-                  label: const Text('Tháng trước'),
-                ),
+              _quickButton(
+                icon: Icons.keyboard_arrow_left,
+                label: 'Tháng trước',
+                onPressed: _selectLastMonth,
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _clearDates,
-                  icon: const Icon(Icons.clear, size: 16),
-                  label: const Text('Xóa bộ lọc'),
-                ),
+              _quickButton(
+                icon: Icons.clear,
+                label: 'Xóa bộ lọc',
+                onPressed: _clearDates,
               ),
             ],
           ),
@@ -166,6 +157,29 @@ class _DateRangeFilterState extends State<DateRangeFilter> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _quickButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 16),
+      label: Text(
+        label,
+        overflow: TextOverflow.ellipsis,
+        softWrap: false,
+        style: const TextStyle(fontSize: 12),
+      ),
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        minimumSize: const Size(0, 36),
+        shape: const StadiumBorder(),
+        visualDensity: VisualDensity.compact,
       ),
     );
   }

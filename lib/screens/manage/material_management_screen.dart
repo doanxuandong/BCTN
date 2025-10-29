@@ -4,6 +4,7 @@ import '../../services/manage/material_service.dart';
 import '../../services/user/user_session.dart';
 import '../../components/material_card.dart';
 import '../../components/statistics/stock_chart_widget.dart';
+import '../../components/statistics/stock_ratio_chart_widget.dart';
 import '../../components/statistics/category_chart_widget.dart';
 import '../../components/statistics/value_trend_widget.dart';
 import '../../components/statistics/transaction_chart_widget.dart';
@@ -134,34 +135,14 @@ class _MaterialManagementScreenState extends State<MaterialManagementScreen>
           _buildReportsTab(),
         ],
       ),
-      floatingActionButton: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          FloatingActionButton(
-            onPressed: () => _navigateToExportMaterial(),
-            backgroundColor: Colors.red[600],
-            heroTag: "export",
-            child: const Icon(Icons.remove, color: Colors.white),
-          ),
-          const SizedBox(height: 8),
-          FloatingActionButton(
-            onPressed: () => _navigateToImportMaterial(),
-            backgroundColor: Colors.green[600],
-            heroTag: "import",
-            child: const Icon(Icons.add, color: Colors.white),
-          ),
-          const SizedBox(height: 8),
-          FloatingActionButton.extended(
-            onPressed: () => _navigateToAddMaterial(),
-            backgroundColor: Colors.blue[700],
-            heroTag: "add",
-            icon: const Icon(Icons.add, color: Colors.white),
-            label: const Text(
-              'Thêm vật liệu',
-              style: TextStyle(color: Colors.white),
-            ),
-          ),
-        ],
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showMaterialActions,
+        backgroundColor: Colors.blue[700],
+        icon: const Icon(Icons.add, color: Colors.white),
+        label: const Text(
+          'Thao tác',
+          style: TextStyle(color: Colors.white),
+        ),
       ),
     );
   }
@@ -405,6 +386,9 @@ class _MaterialManagementScreenState extends State<MaterialManagementScreen>
           ),
           const SizedBox(height: 16),
           StockChartWidget(materials: _materials),
+          const SizedBox(height: 16),
+          // Biểu đồ tỉ lệ đảm bảo tồn kho (độc lập đơn vị)
+          StockRatioChartWidget(materials: _materials),
           const SizedBox(height: 24),
           const Text(
             'Phân bố theo loại',
@@ -555,6 +539,49 @@ class _MaterialManagementScreenState extends State<MaterialManagementScreen>
         _load();
       }
     });
+  }
+
+  void _showMaterialActions() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.add, color: Colors.blue),
+                title: const Text('Thêm vật liệu'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _navigateToAddMaterial();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.arrow_downward, color: Colors.green),
+                title: const Text('Nhập kho'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _navigateToImportMaterial();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.arrow_upward, color: Colors.red),
+                title: const Text('Xuất kho'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _navigateToExportMaterial();
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   void _navigateToTransactionHistory() {
