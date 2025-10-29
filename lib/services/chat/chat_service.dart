@@ -177,6 +177,9 @@ class ChatService {
     required String chatId,
     required String content,
     MessageType type = MessageType.text,
+    String? fileUrl,
+    String? fileName,
+    int? fileSize,
   }) async {
     try {
       final currentUser = await UserSession.getCurrentUser();
@@ -196,14 +199,26 @@ class ChatService {
         'timestamp': now.millisecondsSinceEpoch,
         'isRead': false,
         'status': MessageStatus.sent.toString().split('.').last,
+        if (fileUrl != null) 'fileUrl': fileUrl,
+        if (fileName != null) 'fileName': fileName,
+        if (fileSize != null) 'fileSize': fileSize,
       };
 
       // Thêm tin nhắn
       final messageRef = await _firestore.collection(_messagesCollection).add(messageData);
 
       // Cập nhật chat
+      String lastMessagePreview = content;
+      if (fileUrl != null && fileName != null) {
+        if (type == MessageType.image) {
+          lastMessagePreview = '📷 Đã gửi hình ảnh';
+        } else if (type == MessageType.file) {
+          lastMessagePreview = '📎 $fileName';
+        }
+      }
+      
       await _firestore.collection(_chatsCollection).doc(chatId).update({
-        'lastMessage': content,
+        'lastMessage': lastMessagePreview,
         'lastMessageTime': now.millisecondsSinceEpoch,
         'lastMessageType': type.toString().split('.').last,
         'lastMessageSender': userName,
@@ -334,6 +349,9 @@ class ChatService {
       senderName: data['senderName'] ?? '',
       content: data['content'] ?? '',
       timestamp: DateTime.fromMillisecondsSinceEpoch(data['timestamp'] ?? 0),
+      fileUrl: data['fileUrl'],
+      fileName: data['fileName'],
+      fileSize: data['fileSize'] != null ? (data['fileSize'] as num).toInt() : null,
       isFromMe: fromMe,
       type: type,
       status: status,

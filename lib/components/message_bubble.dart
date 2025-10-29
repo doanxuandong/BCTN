@@ -120,35 +120,60 @@ class MessageBubble extends StatelessWidget {
   }
 
   Widget _buildImageMessage() {
+    final imageUrl = message.fileUrl ?? message.content; // Ưu tiên fileUrl
     return Builder(
-      builder: (context) => Container(
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.6,
-          maxHeight: 200,
-        ),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey[300]!),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: Image.network(
-            message.content, // Assuming content is image URL
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              return Container(
-                height: 150,
-                color: Colors.grey[300],
-                child: const Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.broken_image, size: 40, color: Colors.grey),
-                    SizedBox(height: 8),
-                    Text('Không thể tải hình ảnh'),
-                  ],
-                ),
-              );
-            },
+      builder: (context) => GestureDetector(
+        onTap: () {
+          // TODO: Mở ảnh full screen
+          print('View image: $imageUrl');
+        },
+        child: Container(
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.6,
+            maxHeight: 200,
+          ),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey[300]!),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.network(
+              imageUrl,
+              fit: BoxFit.cover,
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return Container(
+                  height: 150,
+                  color: Colors.grey[200],
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      value: loadingProgress.expectedTotalBytes != null
+                          ? loadingProgress.cumulativeBytesLoaded /
+                              loadingProgress.expectedTotalBytes!
+                          : null,
+                    ),
+                  ),
+                );
+              },
+              errorBuilder: (context, error, stackTrace) {
+                return Container(
+                  height: 150,
+                  color: Colors.grey[300],
+                  child: const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.broken_image, size: 40, color: Colors.grey),
+                      SizedBox(height: 8),
+                      Text(
+                        'Không thể tải hình ảnh',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -157,39 +182,102 @@ class MessageBubble extends StatelessWidget {
 
   Widget _buildFileMessage() {
     return Builder(
-      builder: (context) => Container(
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.7,
-        ),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: message.isFromMe ? Colors.blue[600] : Colors.grey[200],
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.attach_file,
-              color: message.isFromMe ? Colors.white : Colors.grey[600],
-              size: 20,
-            ),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                message.content,
-                style: TextStyle(
-                  color: message.isFromMe ? Colors.white : Colors.black87,
-                  fontSize: 14,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+      builder: (context) => GestureDetector(
+        onTap: () {
+          // TODO: Mở file khi tap (cần package open_file hoặc url_launcher)
+          if (message.fileUrl != null) {
+            // Có thể dùng url_launcher để mở URL
+            print('Open file: ${message.fileUrl}');
+          }
+        },
+        child: Container(
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.7,
+          ),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: message.isFromMe ? Colors.blue[600] : Colors.grey[200],
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                _getFileIcon(),
+                color: message.isFromMe ? Colors.white : Colors.grey[700],
+                size: 24,
               ),
-            ),
-          ],
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      message.fileName ?? message.content,
+                      style: TextStyle(
+                        color: message.isFromMe ? Colors.white : Colors.black87,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (message.fileSize != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        _formatFileSize(message.fileSize!),
+                        style: TextStyle(
+                          color: message.isFromMe ? Colors.white70 : Colors.grey[600],
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                Icons.download,
+                color: message.isFromMe ? Colors.white70 : Colors.grey[600],
+                size: 18,
+              ),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  IconData _getFileIcon() {
+    if (message.fileName == null) return Icons.insert_drive_file;
+    final ext = message.fileName!.split('.').last.toLowerCase();
+    switch (ext) {
+      case 'pdf':
+        return Icons.picture_as_pdf;
+      case 'doc':
+      case 'docx':
+        return Icons.description;
+      case 'xls':
+      case 'xlsx':
+        return Icons.table_chart;
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'gif':
+        return Icons.image;
+      case 'zip':
+      case 'rar':
+        return Icons.folder_zip;
+      default:
+        return Icons.insert_drive_file;
+    }
+  }
+
+  String _formatFileSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
   Widget _buildVoiceMessage() {

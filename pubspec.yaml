@@ -44,8 +44,14 @@ dependencies:
   # Image picker
   image_picker: ^1.0.7
   
+  # File picker for selecting files
+  file_picker: ^8.1.4
+  
   # Path provider for file handling
   path_provider: ^2.1.4
+  
+  # Open file for viewing files
+  open_file: ^3.5.5
   
   # Location services
   geolocator: ^12.0.0

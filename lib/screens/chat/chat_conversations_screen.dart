@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import '../../models/chat_model.dart';
+import '../../models/user_profile.dart';
 import '../../services/chat/chat_service.dart';
+import '../../services/friends/friends_service.dart';
+import '../../services/user/user_session.dart';
+import '../../components/friend_card.dart';
 import '../../utils/debug_chats.dart';
 import 'chat_detail_screen.dart';
 
@@ -11,14 +15,19 @@ class ChatConversationsScreen extends StatefulWidget {
   State<ChatConversationsScreen> createState() => _ChatConversationsScreenState();
 }
 
-class _ChatConversationsScreenState extends State<ChatConversationsScreen> {
+class _ChatConversationsScreenState extends State<ChatConversationsScreen> with TickerProviderStateMixin {
   List<Chat> _chats = [];
   bool _isLoading = true;
+  late TabController _tabController;
+  final FriendsService _friendsService = FriendsService();
+  List<UserProfile> _friends = [];
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _loadChats();
+    _loadFriends();
   }
 
   Future<void> _loadChats() async {
@@ -42,21 +51,40 @@ class _ChatConversationsScreenState extends State<ChatConversationsScreen> {
     }
   }
 
+  Future<void> _loadFriends() async {
+    try {
+      final currentUser = await UserSession.getCurrentUser();
+      final userId = currentUser?['userId']?.toString();
+      if (userId == null) return;
+      final friends = await _friendsService.getFriends(userId);
+      if (!mounted) return;
+      setState(() {
+        _friends = friends;
+      });
+    } catch (e) {
+      // ignore
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: const Text(
-          'Tin nhắn',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
+        title: const Text('Tin nhắn', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
         backgroundColor: Colors.blue[700],
         foregroundColor: Colors.white,
         elevation: 0,
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: Colors.white,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          tabs: const [
+            Tab(icon: Icon(Icons.chat_bubble_outline)),
+            Tab(icon: Icon(Icons.people_outline)),
+          ],
+        ),
         actions: [
           IconButton(
             onPressed: () async {
@@ -68,11 +96,17 @@ class _ChatConversationsScreenState extends State<ChatConversationsScreen> {
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _chats.isEmpty
-              ? _buildEmptyState()
-              : _buildChatsList(),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _chats.isEmpty
+                  ? _buildEmptyState()
+                  : _buildChatsList(),
+          _buildFriendsList(),
+        ],
+      ),
     );
   }
 
@@ -104,6 +138,47 @@ class _ChatConversationsScreenState extends State<ChatConversationsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFriendsList() {
+    if (_friends.isEmpty) {
+      return const Center(
+        child: Text(
+          'Chưa có bạn bè nào',
+          style: TextStyle(color: Colors.grey),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () async {
+        await _loadFriends();
+      },
+      child: ListView.builder(
+        itemCount: _friends.length,
+        itemBuilder: (context, index) {
+          final friend = _friends[index];
+          return FriendListTile(
+            user: friend,
+            onTap: () async {
+              // Mở chat với bạn
+              final currentUser = await UserSession.getCurrentUser();
+              final myId = currentUser?['userId']?.toString();
+              if (myId == null) return;
+              final participants = [myId, friend.id]..sort();
+              final chatId = participants.join('_');
+              if (!mounted) return;
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ChatDetailScreen(chatId: chatId),
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }

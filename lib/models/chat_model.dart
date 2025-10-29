@@ -60,6 +60,9 @@ class Message {
   final MessageType type;
   final MessageStatus status;
   final bool isFromMe;
+  final String? fileUrl;
+  final String? fileName;
+  final int? fileSize; // bytes
 
   Message({
     required this.id,
@@ -71,6 +74,9 @@ class Message {
     this.type = MessageType.text,
     this.status = MessageStatus.sent,
     required this.isFromMe,
+    this.fileUrl,
+    this.fileName,
+    this.fileSize,
   });
 
   Message copyWith({
@@ -83,6 +89,9 @@ class Message {
     MessageType? type,
     MessageStatus? status,
     bool? isFromMe,
+    String? fileUrl,
+    String? fileName,
+    int? fileSize,
   }) {
     return Message(
       id: id ?? this.id,
@@ -94,6 +103,9 @@ class Message {
       type: type ?? this.type,
       status: status ?? this.status,
       isFromMe: isFromMe ?? this.isFromMe,
+      fileUrl: fileUrl ?? this.fileUrl,
+      fileName: fileName ?? this.fileName,
+      fileSize: fileSize ?? this.fileSize,
     );
   }
 

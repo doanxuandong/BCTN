@@ -1,6 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../models/chat_model.dart';
 import '../../services/chat/chat_service.dart';
+import '../../services/storage/file_storage_service.dart';
+import '../../services/user/user_session.dart';
 import '../../components/message_bubble.dart';
 
 class ChatDetailScreen extends StatefulWidget {
@@ -23,6 +26,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   bool _isSending = false;
+  bool _isUploading = false;
+  double? _uploadProgress;
 
   @override
   void initState() {
@@ -199,8 +204,17 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       child: Row(
         children: [
           IconButton(
-            onPressed: () {},
-            icon: const Icon(Icons.attach_file, color: Colors.grey),
+            onPressed: _isUploading ? null : _showFilePicker,
+            icon: _isUploading
+                ? SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      value: _uploadProgress,
+                    ),
+                  )
+                : const Icon(Icons.attach_file, color: Colors.grey),
           ),
           Expanded(
             child: TextField(
@@ -276,5 +290,136 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
     );
+  }
+
+  Future<void> _showFilePicker() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Chọn ảnh từ thư viện'),
+              onTap: () => Navigator.pop(context, 'image'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.insert_drive_file),
+              title: const Text('Chọn file (PDF, DOC, ...)'),
+              onTap: () => Navigator.pop(context, 'file'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (choice == 'image') {
+      await _pickAndSendImage();
+    } else if (choice == 'file') {
+      await _pickAndSendFile();
+    }
+  }
+
+  Future<void> _pickAndSendImage() async {
+    try {
+      final result = await FileStorageService.pickImage();
+      if (result == null) return;
+
+      await _uploadAndSendFile(
+        file: result,
+        messageType: MessageType.image,
+      );
+    } catch (e) {
+      _showSnackBar('Lỗi khi chọn ảnh: $e');
+    }
+  }
+
+  Future<void> _pickAndSendFile() async {
+    try {
+      final result = await FileStorageService.pickFile();
+      if (result == null || result.files.single.path == null) return;
+
+      final filePath = result.files.single.path!;
+      final file = File(filePath);
+      
+      await _uploadAndSendFile(
+        file: file,
+        messageType: MessageType.file,
+        fileName: result.files.single.name,
+        fileSize: result.files.single.size,
+      );
+    } catch (e) {
+      _showSnackBar('Lỗi khi chọn file: $e');
+    }
+  }
+
+  Future<void> _uploadAndSendFile({
+    required File file,
+    required MessageType messageType,
+    String? fileName,
+    int? fileSize,
+  }) async {
+    setState(() {
+      _isUploading = true;
+      _uploadProgress = 0.0;
+    });
+
+    try {
+      final currentUser = await UserSession.getCurrentUser();
+      if (currentUser == null) {
+        _showSnackBar('Vui lòng đăng nhập lại');
+        return;
+      }
+
+      final userId = currentUser['userId']?.toString();
+      if (userId == null) return;
+
+      // Upload file lên Firebase Storage
+      final fileUrl = await FileStorageService.uploadFile(
+        file: file,
+        chatId: widget.chatId,
+        userId: userId,
+      );
+
+      if (fileUrl == null) {
+        _showSnackBar('Lỗi khi upload file');
+        return;
+      }
+
+      // Gửi tin nhắn với file
+      final actualFileName = fileName ?? file.path.split('/').last;
+      final actualFileSize = fileSize ?? await file.length();
+      
+      String messageContent = '';
+      if (messageType == MessageType.image) {
+        messageContent = '📷 Đã gửi hình ảnh';
+      } else {
+        messageContent = '📎 $actualFileName';
+      }
+
+      final messageId = await ChatService.sendMessage(
+        chatId: widget.chatId,
+        content: messageContent,
+        type: messageType,
+        fileUrl: fileUrl,
+        fileName: actualFileName,
+        fileSize: actualFileSize,
+      );
+
+      if (messageId != null) {
+        await _loadMessages(); // Reload messages
+        _showSnackBar('Đã gửi file thành công');
+      } else {
+        _showSnackBar('Lỗi khi gửi tin nhắn');
+      }
+    } catch (e) {
+      _showSnackBar('Lỗi: $e');
+    } finally {
+      setState(() {
+        _isUploading = false;
+        _uploadProgress = null;
+      });
+    }
   }
 }
