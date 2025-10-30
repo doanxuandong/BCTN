@@ -85,14 +85,6 @@ class _SearchScreenState extends State<SearchScreen> {
         backgroundColor: Colors.blue[700],
         foregroundColor: Colors.white,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.sync),
-            tooltip: 'Tải lại dữ liệu',
-            onPressed: () async {
-              await _loadRealUsers();
-              if (mounted) _applyFilters();
-            },
-          ),
           Stack(
             children: [
               IconButton(
@@ -275,8 +267,21 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildProvinceDropdown() {
+    // Build items from full VN provinces list
+    final provinceItems = vnProvinces
+        .map((name) => Province(code: name, name: name, region: Region.south))
+        .toList();
+
+    // Make sure currently selected value exists within items to avoid assertion
+    final Province? selected = _selectedProvince == null
+        ? null
+        : provinceItems.firstWhere(
+            (p) => p.name == _selectedProvince!.name,
+            orElse: () => provinceItems.first,
+          );
+
     return DropdownButtonFormField<Province?>(
-      value: _selectedProvince,
+      value: _selectedProvince == null ? null : selected,
       isExpanded: true,
       decoration: const InputDecoration(
         labelText: 'Tỉnh/Thành',
@@ -285,10 +290,7 @@ class _SearchScreenState extends State<SearchScreen> {
       ),
       items: [
         const DropdownMenuItem(value: null, child: Text('Tất cả')),
-        ...vnProvinces.map((name) {
-          final item = Province(code: name, name: name, region: Region.south);
-          return DropdownMenuItem(value: item, child: Text(name));
-        }),
+        ...provinceItems.map((item) => DropdownMenuItem(value: item, child: Text(item.name))),
       ],
       onChanged: (v) {
         setState(() {
@@ -1060,15 +1062,7 @@ class _SearchScreenState extends State<SearchScreen> {
       // Apply filters với dữ liệu mới
       _applyFilters();
       
-      // Hiển thị thông báo
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Đã tải ${users.length} tài khoản thật từ Firebase'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
+      // No success snackbar to keep UI clean
     } catch (e) {
       print('Error loading real users: $e');
       setState(() {
@@ -1110,8 +1104,10 @@ class _SearchScreenState extends State<SearchScreen> {
           accountType = AccountType.designer; // Default
       }
 
-      // Map province (normalize dấu/alias để khớp chính xác)
-      Province province = _mapProvinceFromProfile(profile.province);
+      // Map province: dùng trực tiếp tên tỉnh từ hồ sơ để đồng bộ với dropdown 63 tỉnh
+      Province province = profile.province.isNotEmpty
+          ? Province(code: profile.province, name: profile.province, region: Region.central)
+          : Province(code: 'TP. Hồ Chí Minh', name: 'TP. Hồ Chí Minh', region: Region.south);
 
       // Map specialties
       List<Specialty> specialties = profile.specialties.map((s) {
@@ -1139,74 +1135,5 @@ class _SearchScreenState extends State<SearchScreen> {
     }).toList();
   }
 
-  // ===== Helpers: province normalization & mapping =====
-  Province _mapProvinceFromProfile(String provinceName) {
-    if (provinceName.isEmpty) return SearchData.provinces.first;
-    final norm = _normalizeProvince(provinceName);
-
-    // Quick alias map for the provinces we currently list in SearchData
-    const Map<String, String> aliasToCode = {
-      'hanoi': 'HN',
-      'ha noi': 'HN',
-      'thanh pho ha noi': 'HN',
-      'hanoi, vietnam': 'HN',
-
-      'haiphong': 'HP',
-      'hai phong': 'HP',
-      'thanh pho hai phong': 'HP',
-
-      'danang': 'DN',
-      'da nang': 'DN',
-      'thanh pho da nang': 'DN',
-
-      'khanhhoa': 'KH',
-      'khanh hoa': 'KH',
-
-      'hochiminh': 'HCM',
-      'ho chi minh': 'HCM',
-      'tp ho chi minh': 'HCM',
-      'tp. ho chi minh': 'HCM',
-      'thanh pho ho chi minh': 'HCM',
-
-      'binhduong': 'BD',
-      'binh duong': 'BD',
-    };
-
-    // Try alias direct match
-    for (final entry in aliasToCode.entries) {
-      if (norm.contains(entry.key)) {
-        return SearchData.provinces.firstWhere((p) => p.code == entry.value, orElse: () => SearchData.provinces.first);
-      }
-    }
-
-    // Try contains matching against SearchData.provinces names
-    for (final p in SearchData.provinces) {
-      if (_normalizeProvince(p.name) == norm || norm.contains(_normalizeProvince(p.name)) || _normalizeProvince(p.name).contains(norm)) {
-        return p;
-      }
-    }
-
-    // Fallback to HCM if contains 'ho chi minh' variants
-    if (norm.contains('hochiminh') || norm.contains('ho chi minh')) {
-      return SearchData.provinces.firstWhere((p) => p.code == 'HCM', orElse: () => SearchData.provinces.first);
-    }
-
-    // Default to first (HN)
-    return SearchData.provinces.first;
-  }
-
-  String _normalizeProvince(String input) {
-    String s = input.toLowerCase().trim();
-    s = s
-        .replaceAll(RegExp(r'[àáạảãăằắặẳẵâầấậẩẫ]'), 'a')
-        .replaceAll(RegExp(r'[èéẹẻẽêềếệểễ]'), 'e')
-        .replaceAll(RegExp(r'[ìíịỉĩ]'), 'i')
-        .replaceAll(RegExp(r'[òóọỏõôồốộổỗơờớợởỡ]'), 'o')
-        .replaceAll(RegExp(r'[ùúụủũưừứựửữ]'), 'u')
-        .replaceAll(RegExp(r'[ỳýỵỷỹ]'), 'y')
-        .replaceAll(RegExp(r'[đ]'), 'd');
-    s = s.replaceAll(RegExp(r'[^a-z0-9\s]'), '');
-    s = s.replaceAll(RegExp(r'\s+'), ' ').trim();
-    return s;
-  }
+  // (legacy) kept no-op helpers removed to simplify mapping to 63-tinh dropdown
 }
