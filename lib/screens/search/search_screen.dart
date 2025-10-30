@@ -10,6 +10,8 @@ import '../../utils/migrate_user_profiles.dart';
 import 'search_results_screen.dart';
 import 'search_notifications_screen.dart';
 import '../profile/public_profile_screen.dart';
+import '../../services/friends/friends_service.dart';
+import '../../services/user/user_session.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -48,6 +50,7 @@ class _SearchScreenState extends State<SearchScreen> {
   bool _showFilters = true; // Điều khiển hiển thị bộ lọc
   int _unreadNotificationsCount = 0;
   bool _isLoadingRealUsers = false;
+  final Map<String, bool> _friendRequestsPending = {}; // userId -> true nếu đã gửi
 
   @override
   void initState() {
@@ -742,13 +745,55 @@ class _SearchScreenState extends State<SearchScreen> {
       itemCount: _results.length,
       itemBuilder: (context, index) {
         final acc = _results[index];
-        return AccountCard(account: acc, onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) => PublicProfileScreen(userId: acc.id),
-            ),
-          );
-        });
+        final isRequested = _friendRequestsPending[acc.id] == true;
+
+        return AccountCard(
+          account: acc,
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) => PublicProfileScreen(userId: acc.id),
+              ),
+            );
+          },
+          onSendFriendRequest: () async {
+            final currentUser = await UserSession.getCurrentUser();
+            if (currentUser == null) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bạn cần đăng nhập!')));
+              }
+              return;
+            }
+            final myId = currentUser['userId']?.toString();
+            final toId = acc.id;
+            if (myId == null || myId == toId) return;
+            
+            setState(() {
+              _friendRequestsPending[toId] = true;
+            });
+
+            final result = await FriendsService().sendFriendRequest(myId, toId);
+            setState(() {
+              _friendRequestsPending[toId] = result;
+            });
+            if (mounted && result) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Đã gửi lời mời kết bạn cho ${acc.name}!'),
+                  backgroundColor: Colors.green,
+                )
+              );
+            } else if (mounted && !result) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Đã gửi rồi hoặc có lỗi!'),
+                  backgroundColor: Colors.orange,
+                )
+              );
+            }
+          },
+          isFriendRequestPending: isRequested,
+        );
       },
     );
   }

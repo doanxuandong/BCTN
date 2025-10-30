@@ -4,8 +4,16 @@ import '../models/search_models.dart';
 class AccountCard extends StatelessWidget {
   final SearchAccount account;
   final VoidCallback? onTap;
+  final VoidCallback? onSendFriendRequest; // callback gửi lời mời
+  final bool isFriendRequestPending;
 
-  const AccountCard({super.key, required this.account, this.onTap});
+  const AccountCard({
+    super.key,
+    required this.account,
+    this.onTap,
+    this.onSendFriendRequest,
+    this.isFriendRequestPending = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -167,6 +175,18 @@ class AccountCard extends StatelessWidget {
             Text('${account.distanceKm.toStringAsFixed(1)} km', style: TextStyle(color: Colors.grey[700], fontSize: 12)),
           ],
         ),
+        const SizedBox(height: 8),
+        if (onSendFriendRequest != null)
+          IconButton(
+            tooltip: isFriendRequestPending ? 'Đã gửi kết bạn' : 'Kết bạn',
+            icon: Icon(
+              isFriendRequestPending ? Icons.hourglass_top : Icons.person_add,
+              color: isFriendRequestPending ? Colors.grey : Colors.blue,
+              size: 22,
+            ),
+            onPressed: isFriendRequestPending ? null : onSendFriendRequest,
+            splashRadius: 22,
+          ),
       ],
     );
   }
