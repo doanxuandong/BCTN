@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../services/auth/firestore_auth_service.dart';
 import '../../services/location/location_service.dart';
+import '../../constants/vn_provinces.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -26,6 +27,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   double? _latitude;
   double? _longitude;
   Position? _currentPosition;
+  String? _selectedProvince;
 
   @override
   void dispose() {
@@ -66,6 +68,74 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
+  void _openProvincePicker() async {
+    final controller = TextEditingController();
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        List<String> filtered = vnProvinces;
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 12),
+                  const Text('Chọn Tỉnh/Thành', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: TextField(
+                      controller: controller,
+                      decoration: const InputDecoration(
+                        hintText: 'Gõ để tìm...',
+                        prefixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (v) {
+                        setModalState(() {
+                          filtered = vnProvinces
+                              .where((p) => p.toLowerCase().contains(v.toLowerCase()))
+                              .toList();
+                        });
+                      },
+                    ),
+                  ),
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: filtered.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final name = filtered[index];
+                        return ListTile(
+                          title: Text(name),
+                          trailing: _selectedProvince == name
+                              ? const Icon(Icons.check, color: Colors.green)
+                              : null,
+                          onTap: () => Navigator.pop(context, name),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (selected != null) {
+      setState(() {
+        _selectedProvince = selected;
+      });
+    }
+  }
+
   Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -84,6 +154,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         type: _userType,
         latitude: _latitude,
         longitude: _longitude,
+        province: _selectedProvince ?? '',
       );
 
       if (mounted) {
@@ -234,17 +305,39 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
               const SizedBox(height: 16),
               
-              // Địa chỉ
+              // Tỉnh/Thành (searchable select)
+              GestureDetector(
+                onTap: _openProvincePicker,
+                child: AbsorbPointer(
+                  child: TextFormField(
+                    decoration: const InputDecoration(
+                      labelText: "Tỉnh/Thành",
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.location_city),
+                    ),
+                    controller: TextEditingController(text: _selectedProvince ?? ''),
+                    validator: (value) {
+                      if ((_selectedProvince ?? '').isEmpty) {
+                        return 'Vui lòng chọn Tỉnh/Thành';
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Địa chỉ chi tiết
               TextFormField(
                 controller: _addressController,
                 decoration: const InputDecoration(
-                  labelText: "Địa chỉ",
+                  labelText: "Địa chỉ (đường, phường/xã)",
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.location_on),
                 ),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
-                    return 'Vui lòng nhập địa chỉ';
+                    return 'Vui lòng nhập địa chỉ chi tiết';
                   }
                   return null;
                 },

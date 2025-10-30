@@ -14,6 +14,7 @@ class FirestoreAuthService {
     String type = '1', // 1 = thường, 2 = chủ thầu, 3 = cửa hàng vật liệu, 4 = nhà thiết kế
     double? latitude,
     double? longitude,
+    String province = '',
   }) async {
     try {
       // Kiểm tra email đã tồn tại chưa
@@ -62,7 +63,7 @@ class FirestoreAuthService {
         'lastLogin': FieldValue.serverTimestamp(),
         // Thêm các trường search mới
         'accountType': accountType,
-        'province': '',
+        'province': province,
         'region': '',
         'specialties': [],
         'rating': 0.0,

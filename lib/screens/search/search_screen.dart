@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../models/search_models.dart';
+import '../../constants/vn_provinces.dart';
 import '../../models/user_profile.dart';
 import '../../components/account_card.dart';
 import '../../services/search/search_notification_service.dart';
@@ -8,6 +9,7 @@ import '../../services/location/location_service.dart';
 import '../../utils/migrate_user_profiles.dart';
 import 'search_results_screen.dart';
 import 'search_notifications_screen.dart';
+import '../profile/public_profile_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -19,6 +21,7 @@ class SearchScreen extends StatefulWidget {
 class _SearchScreenState extends State<SearchScreen> {
   AccountType _selectedType = AccountType.designer;
   double _radiusKm = 10;
+  bool _enableRadius = false;
   Province? _selectedProvince;
   Region? _selectedRegion;
   final Set<Specialty> _selectedSpecialties = {};
@@ -57,6 +60,17 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Khi quay lại màn hình tìm kiếm, tải lại dữ liệu để cập nhật account mới đăng ký
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && ModalRoute.of(context)?.isCurrent == true) {
+        _loadRealUsers();
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _specialtiesController.dispose();
     super.dispose();
@@ -71,6 +85,14 @@ class _SearchScreenState extends State<SearchScreen> {
         backgroundColor: Colors.blue[700],
         foregroundColor: Colors.white,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.sync),
+            tooltip: 'Tải lại dữ liệu',
+            onPressed: () async {
+              await _loadRealUsers();
+              if (mounted) _applyFilters();
+            },
+          ),
           Stack(
             children: [
               IconButton(
@@ -201,21 +223,40 @@ class _SearchScreenState extends State<SearchScreen> {
           const SizedBox(height: 12),
           Row(
             children: [
-              const Text('Bán kính:', style: TextStyle(fontWeight: FontWeight.w600)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Slider(
-                  min: 1,
-                  max: 100,
-                  divisions: 99,
-                  value: _radiusKm,
-                  label: '${_radiusKm.toStringAsFixed(0)} km',
+              Transform.scale(
+                scale: 0.85,
+                child: Switch(
+                  value: _enableRadius,
                   onChanged: (v) {
                     setState(() {
-                      _radiusKm = v;
+                      _enableRadius = v;
                       _applyFilters();
                     });
                   },
+                ),
+              ),
+              const SizedBox(width: 2),
+              const Text('Lọc theo bán kính'),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Opacity(
+                  opacity: _enableRadius ? 1.0 : 0.4,
+                  child: IgnorePointer(
+                    ignoring: !_enableRadius,
+                    child: Slider(
+                      min: 1,
+                      max: 100,
+                      divisions: 99,
+                      value: _radiusKm,
+                      label: '${_radiusKm.toStringAsFixed(0)} km',
+                      onChanged: (v) {
+                        setState(() {
+                          _radiusKm = v;
+                          _applyFilters();
+                        });
+                      },
+                    ),
+                  ),
                 ),
               ),
               SizedBox(
@@ -244,7 +285,10 @@ class _SearchScreenState extends State<SearchScreen> {
       ),
       items: [
         const DropdownMenuItem(value: null, child: Text('Tất cả')),
-        ...SearchData.provinces.map((p) => DropdownMenuItem(value: p, child: Text(p.name))),
+        ...vnProvinces.map((name) {
+          final item = Province(code: name, name: name, region: Region.south);
+          return DropdownMenuItem(value: item, child: Text(name));
+        }),
       ],
       onChanged: (v) {
         setState(() {
@@ -697,8 +741,10 @@ class _SearchScreenState extends State<SearchScreen> {
       itemBuilder: (context, index) {
         final acc = _results[index];
         return AccountCard(account: acc, onTap: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Mở hồ sơ: ${acc.name}')),
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => PublicProfileScreen(userId: acc.id),
+            ),
           );
         });
       },
@@ -721,8 +767,10 @@ class _SearchScreenState extends State<SearchScreen> {
       data = data.where((a) => a.province.region == _selectedRegion!).toList();
     }
 
-    // Radius (giả lập)
-    data = data.where((a) => a.distanceKm <= _radiusKm).toList();
+    // Radius (chỉ áp dụng khi bật)
+    if (_enableRadius) {
+      data = data.where((a) => a.distanceKm <= _radiusKm).toList();
+    }
 
     // Specialties - xử lý chuyên ngành đã chọn
     if (_selectedCustomSpecialties.isNotEmpty) {
@@ -898,7 +946,7 @@ class _SearchScreenState extends State<SearchScreen> {
               minRating: 0.0, // Có thể thêm filter rating sau
               userLat: userLat,
               userLng: userLng,
-              maxDistanceKm: _radiusKm,
+              maxDistanceKm: _enableRadius ? _radiusKm : null,
               keyword: _keyword.isNotEmpty ? _keyword : null,
             ),
           ),
@@ -988,7 +1036,7 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   /// Load dữ liệu thật từ Firebase
-  void _loadRealUsers() async {
+  Future<void> _loadRealUsers() async {
     setState(() {
       _isLoadingRealUsers = true;
     });
@@ -1062,16 +1110,8 @@ class _SearchScreenState extends State<SearchScreen> {
           accountType = AccountType.designer; // Default
       }
 
-      // Map province
-      Province? province;
-      if (profile.province.isNotEmpty) {
-        province = SearchData.provinces.firstWhere(
-          (p) => p.name.contains(profile.province) || profile.province.contains(p.name),
-          orElse: () => SearchData.provinces.first,
-        );
-      } else {
-        province = SearchData.provinces.first;
-      }
+      // Map province (normalize dấu/alias để khớp chính xác)
+      Province province = _mapProvinceFromProfile(profile.province);
 
       // Map specialties
       List<Specialty> specialties = profile.specialties.map((s) {
@@ -1097,5 +1137,76 @@ class _SearchScreenState extends State<SearchScreen> {
         additionalInfo: profile.additionalInfo,
       );
     }).toList();
+  }
+
+  // ===== Helpers: province normalization & mapping =====
+  Province _mapProvinceFromProfile(String provinceName) {
+    if (provinceName.isEmpty) return SearchData.provinces.first;
+    final norm = _normalizeProvince(provinceName);
+
+    // Quick alias map for the provinces we currently list in SearchData
+    const Map<String, String> aliasToCode = {
+      'hanoi': 'HN',
+      'ha noi': 'HN',
+      'thanh pho ha noi': 'HN',
+      'hanoi, vietnam': 'HN',
+
+      'haiphong': 'HP',
+      'hai phong': 'HP',
+      'thanh pho hai phong': 'HP',
+
+      'danang': 'DN',
+      'da nang': 'DN',
+      'thanh pho da nang': 'DN',
+
+      'khanhhoa': 'KH',
+      'khanh hoa': 'KH',
+
+      'hochiminh': 'HCM',
+      'ho chi minh': 'HCM',
+      'tp ho chi minh': 'HCM',
+      'tp. ho chi minh': 'HCM',
+      'thanh pho ho chi minh': 'HCM',
+
+      'binhduong': 'BD',
+      'binh duong': 'BD',
+    };
+
+    // Try alias direct match
+    for (final entry in aliasToCode.entries) {
+      if (norm.contains(entry.key)) {
+        return SearchData.provinces.firstWhere((p) => p.code == entry.value, orElse: () => SearchData.provinces.first);
+      }
+    }
+
+    // Try contains matching against SearchData.provinces names
+    for (final p in SearchData.provinces) {
+      if (_normalizeProvince(p.name) == norm || norm.contains(_normalizeProvince(p.name)) || _normalizeProvince(p.name).contains(norm)) {
+        return p;
+      }
+    }
+
+    // Fallback to HCM if contains 'ho chi minh' variants
+    if (norm.contains('hochiminh') || norm.contains('ho chi minh')) {
+      return SearchData.provinces.firstWhere((p) => p.code == 'HCM', orElse: () => SearchData.provinces.first);
+    }
+
+    // Default to first (HN)
+    return SearchData.provinces.first;
+  }
+
+  String _normalizeProvince(String input) {
+    String s = input.toLowerCase().trim();
+    s = s
+        .replaceAll(RegExp(r'[àáạảãăằắặẳẵâầấậẩẫ]'), 'a')
+        .replaceAll(RegExp(r'[èéẹẻẽêềếệểễ]'), 'e')
+        .replaceAll(RegExp(r'[ìíịỉĩ]'), 'i')
+        .replaceAll(RegExp(r'[òóọỏõôồốộổỗơờớợởỡ]'), 'o')
+        .replaceAll(RegExp(r'[ùúụủũưừứựửữ]'), 'u')
+        .replaceAll(RegExp(r'[ỳýỵỷỹ]'), 'y')
+        .replaceAll(RegExp(r'[đ]'), 'd');
+    s = s.replaceAll(RegExp(r'[^a-z0-9\s]'), '');
+    s = s.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return s;
   }
 }
