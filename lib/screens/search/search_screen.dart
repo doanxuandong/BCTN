@@ -138,21 +138,26 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          _buildTypeSelector(),
-          if (_showFilters) ...[
-            Flexible(
-              child: SingleChildScrollView(
-                child: _buildFilters(),
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await _loadRealUsers();
+        },
+        child: Column(
+          children: [
+            _buildTypeSelector(),
+            if (_showFilters) ...[
+              Flexible(
+                child: SingleChildScrollView(
+                  child: _buildFilters(),
+                ),
               ),
-            ),
+            ],
+            _buildKeywordBar(),
+            const SizedBox(height: 8),
+            _buildResultHeader(),
+            Expanded(child: _buildResults()),
           ],
-          _buildKeywordBar(),
-          const SizedBox(height: 8),
-          _buildResultHeader(),
-          Expanded(child: _buildResults()),
-        ],
+        ),
       ),
     );
   }

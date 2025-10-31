@@ -2,8 +2,13 @@ import 'package:flutter/material.dart';
 import '../../models/user_profile.dart';
 import '../../services/user/user_profile_service.dart';
 import '../../services/social/post_service.dart';
+import '../../services/review/review_service.dart';
+import '../../services/user/user_session.dart';
 import '../../models/post_model.dart';
+import '../../models/review.dart';
 import '../../components/post_card.dart';
+import '../review/add_review_screen.dart';
+import '../review/reviews_list_screen.dart';
 
 class PublicProfileScreen extends StatefulWidget {
   final String userId;
@@ -17,6 +22,8 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
   UserProfile? _profile;
   bool _loading = true;
   List<Post> _posts = [];
+  Review? _myReview; // Review của mình (nếu đã đánh giá)
+  String? _currentUserId;
 
   @override
   void initState() {
@@ -27,12 +34,78 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
   Future<void> _load() async {
     final p = await UserProfileService.getProfile(widget.userId);
     final posts = await PostService.getPostsByUser(widget.userId);
+    
+    // Kiểm tra đã đánh giá chưa
+    final currentUser = await UserSession.getCurrentUser();
+    _currentUserId = currentUser?['userId'];
+    Review? myReview;
+    if (_currentUserId != null && _currentUserId != widget.userId) {
+      myReview = await ReviewService.getUserReview(_currentUserId!, widget.userId);
+    }
+    
+    // Debug: Kiểm tra rating có đúng không
+    print('📊 Profile rating: ${p?.rating}, reviewCount: ${p?.reviewCount}');
+    
     if (!mounted) return;
     setState(() {
       _profile = p;
       _posts = posts;
+      _myReview = myReview;
       _loading = false;
     });
+  }
+
+  Future<void> _openAddReview() async {
+    if (_currentUserId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Vui lòng đăng nhập để đánh giá'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    if (_currentUserId == widget.userId) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Không thể tự đánh giá bản thân'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AddReviewScreen(
+          targetUserId: widget.userId,
+          targetUserName: _profile!.displayName,
+          targetUserAvatar: _profile!.displayAvatar,
+          existingReview: _myReview,
+        ),
+      ),
+    );
+
+    if (result == true) {
+      _load(); // Reload để cập nhật rating
+    }
+  }
+
+  Future<void> _openReviewsList() async {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ReviewsListScreen(
+          targetUserId: widget.userId,
+          targetUserName: _profile!.displayName,
+          targetUserAvatar: _profile!.displayAvatar,
+          currentRating: _profile!.rating,
+          reviewCount: _profile!.reviewCount,
+        ),
+      ),
+    );
   }
 
   @override
@@ -88,7 +161,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
                       if (_profile!.specialties.isNotEmpty)
                         _infoRow(Icons.category, _profile!.specialties.join(', ')),
                       const SizedBox(height: 8),
-                      _summaryChips(),
+                      _summaryChipsWithReview(),
                       const SizedBox(height: 16),
                       Align(
                         alignment: Alignment.centerLeft,
@@ -138,18 +211,63 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
     );
   }
 
-  Widget _summaryChips() {
+  Widget _summaryChipsWithReview() {
     final items = <Widget>[];
     if (_profile!.rating > 0) {
-      items.add(_chip(Icons.star, '${_profile!.rating.toStringAsFixed(1)}★'));
+      items.add(_chip(Icons.star, '${_profile!.rating.toStringAsFixed(1)}★', onTap: _openReviewsList));
     }
-    items.add(_chip(Icons.reviews, '${_profile!.reviewCount} đánh giá'));
+    items.add(_chip(Icons.reviews, '${_profile!.reviewCount} đánh giá', onTap: _openReviewsList));
     if (_profile!.province.isNotEmpty) items.add(_chip(Icons.location_city, _profile!.province));
+    
+    // Thêm nút đánh giá nếu không phải profile của mình
+    if (_currentUserId != null && _currentUserId != widget.userId) {
+      items.add(_reviewButton());
+    }
+    
     return Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: items);
   }
 
-  Widget _chip(IconData icon, String text) {
-    return Container(
+  Widget _reviewButton() {
+    return GestureDetector(
+      onTap: _openAddReview,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.amber,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.amber.withOpacity(0.3),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              _myReview != null ? Icons.edit : Icons.star_rate,
+              size: 16,
+              color: Colors.white,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              _myReview != null ? 'Sửa' : 'Đánh giá',
+              style: const TextStyle(
+                fontSize: 12,
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _chip(IconData icon, String text, {VoidCallback? onTap}) {
+    final chipContent = Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: Colors.blue[50],
@@ -165,6 +283,14 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
         ],
       ),
     );
+
+    if (onTap != null) {
+      return GestureDetector(
+        onTap: onTap,
+        child: chipContent,
+      );
+    }
+    return chipContent;
   }
 }
 
