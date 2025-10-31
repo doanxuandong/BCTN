@@ -188,11 +188,11 @@ class _SearchScreenState extends State<SearchScreen> {
         ],
       ),
       selected: selected,
-      onSelected: (_) {
+      onSelected: (_) async {
         setState(() {
           _selectedType = type;
-          _applyFilters();
         });
+        await _applyFilters();
       },
       selectedColor: Colors.blue[600],
       backgroundColor: Colors.blue[50],
@@ -222,11 +222,11 @@ class _SearchScreenState extends State<SearchScreen> {
                 scale: 0.85,
                 child: Switch(
                   value: _enableRadius,
-                  onChanged: (v) {
+                  onChanged: (v) async {
                     setState(() {
                       _enableRadius = v;
-                      _applyFilters();
                     });
+                    await _applyFilters();
                   },
                 ),
               ),
@@ -798,9 +798,22 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  void _applyFilters() {
+  Future<void> _applyFilters() async {
+    // Lấy vị trí GPS hiện tại để tính khoảng cách chính xác
+    final position = await LocationService.getCurrentLocation();
+    double userLat = 10.8231; // Default: TP.HCM
+    double userLng = 106.6297;
+
+    if (position != null) {
+      userLat = position.latitude;
+      userLng = position.longitude;
+      print('✅ _applyFilters: Got user location: $userLat, $userLng');
+    } else {
+      print('⚠️ _applyFilters: Using default location (TP.HCM)');
+    }
+
     // Sử dụng dữ liệu thật từ Firebase nếu có, nếu không thì dùng dữ liệu tĩnh
-    var data = _realUsers.isNotEmpty ? _convertUserProfilesToSearchAccounts(_realUsers) : SearchData.accounts;
+    var data = _realUsers.isNotEmpty ? _convertUserProfilesToSearchAccounts(_realUsers, userLat, userLng) : SearchData.accounts;
 
     data = data.where((a) => a.type == _selectedType).toList();
 
@@ -872,7 +885,7 @@ class _SearchScreenState extends State<SearchScreen> {
     });
   }
 
-  void _resetFilters() {
+  Future<void> _resetFilters() async {
     setState(() {
       _selectedType = AccountType.designer;
       _radiusKm = 10;
@@ -895,9 +908,9 @@ class _SearchScreenState extends State<SearchScreen> {
       
       // Hiện lại bộ lọc khi reset
       _showFilters = true;
-      
-      _applyFilters();
     });
+    
+    await _applyFilters();
   }
 
   /// Lắng nghe thông báo tìm kiếm
@@ -1105,7 +1118,7 @@ class _SearchScreenState extends State<SearchScreen> {
       });
 
       // Apply filters với dữ liệu mới
-      _applyFilters();
+      await _applyFilters();
       
       // No success snackbar to keep UI clean
     } catch (e) {
@@ -1131,9 +1144,15 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   /// Convert UserProfile sang SearchAccount để hiển thị
-  List<SearchAccount> _convertUserProfilesToSearchAccounts(List<UserProfile> profiles) {
+  List<SearchAccount> _convertUserProfilesToSearchAccounts(
+    List<UserProfile> profiles, 
+    double userLat, 
+    double userLng
+  ) {
     return profiles.map((profile) {
       // Map UserAccountType sang AccountType
+      // Chỉ map các loại designer, contractor, store
+      // Bỏ qua general và các loại khác
       AccountType accountType;
       switch (profile.accountType) {
         case UserAccountType.designer:
@@ -1145,8 +1164,9 @@ class _SearchScreenState extends State<SearchScreen> {
         case UserAccountType.store:
           accountType = AccountType.store;
           break;
-        default:
-          accountType = AccountType.designer; // Default
+        case UserAccountType.general:
+          // Bỏ qua tài khoản general - không hiển thị trong search
+          return null;
       }
 
       // Map province: dùng trực tiếp tên tỉnh từ hồ sơ để đồng bộ với dropdown 63 tỉnh
@@ -1162,6 +1182,17 @@ class _SearchScreenState extends State<SearchScreen> {
         );
       }).toList();
 
+      // Tính khoảng cách dùng LocationService (chính xác hơn)
+      double distance = 999.0; // Mặc định cho account không có GPS
+      if (profile.latitude != 0.0 && profile.longitude != 0.0) {
+        distance = LocationService.calculateDistance(
+          userLat,
+          userLng,
+          profile.latitude,
+          profile.longitude,
+        );
+      }
+
       return SearchAccount(
         id: profile.id,
         name: profile.name,
@@ -1171,13 +1202,11 @@ class _SearchScreenState extends State<SearchScreen> {
         specialties: specialties.isNotEmpty ? specialties : [SearchData.specialties.first],
         rating: profile.rating,
         reviewCount: profile.reviewCount,
-        distanceKm: profile.latitude != 0.0 && profile.longitude != 0.0 
-            ? profile.calculateDistance(10.8231, 106.6297) // TP.HCM coordinates
-            : 5.0, // Default distance
+        distanceKm: distance,
         avatarUrl: profile.displayAvatar,
         additionalInfo: profile.additionalInfo,
       );
-    }).toList();
+    }).whereType<SearchAccount>().toList(); // Lọc bỏ null
   }
 
   // (legacy) kept no-op helpers removed to simplify mapping to 63-tinh dropdown
