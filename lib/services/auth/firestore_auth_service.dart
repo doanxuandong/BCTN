@@ -1,4 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
+import 'package:firebase_core/firebase_core.dart';
 
 class FirestoreAuthService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -96,11 +98,22 @@ class FirestoreAuthService {
     required String password,
   }) async {
     try {
+      // Debug: xác nhận app Firebase đang kết nối
+      final app = Firebase.app();
+      // ignore: avoid_print
+      print('[Auth] Firebase appId=${app.options.appId} projectId=${app.options.projectId}');
+
       // Tìm user theo email
       QuerySnapshot userQuery = await _firestore
           .collection('Users')
           .where('email', isEqualTo: email)
-          .get();
+          // Ép lấy dữ liệu từ server để tránh cache offline rỗng
+          .get(const GetOptions(source: Source.server))
+          // Tránh treo vô hạn nếu mất mạng (Firestore sẽ đợi đến khi online)
+          .timeout(const Duration(seconds: 15));
+
+      // ignore: avoid_print
+      print('[Auth] Query Users by email docs=${userQuery.docs.length}');
       
       if (userQuery.docs.isEmpty) {
         return {
@@ -130,6 +143,11 @@ class FirestoreAuthService {
         'success': true,
         'message': 'Đăng nhập thành công!',
         'userData': userData,
+      };
+    } on TimeoutException {
+      return {
+        'success': false,
+        'message': 'Kết nối chậm hoặc mất mạng. Vui lòng thử lại.',
       };
     } catch (e) {
       return {
