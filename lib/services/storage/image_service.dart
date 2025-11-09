@@ -58,6 +58,62 @@ class ImageService {
     }
   }
 
+  /// Chọn nhiều ảnh từ gallery (cho portfolio)
+  static Future<List<File>> pickMultipleImagesFromGallery() async {
+    try {
+      print('Starting to pick multiple images from gallery...');
+      final List<XFile> images = await _picker.pickMultiImage(
+        maxWidth: 2048,
+        maxHeight: 2048,
+        imageQuality: 85,
+      );
+      
+      print('Picked ${images.length} images');
+      
+      final List<File> files = [];
+      for (var image in images) {
+        final file = File(image.path);
+        if (await file.exists()) {
+          files.add(file);
+        }
+      }
+      
+      print('Created ${files.length} files');
+      return files;
+    } catch (e) {
+      print('Error picking multiple images from gallery: $e');
+      return [];
+    }
+  }
+
+  /// Upload nhiều ảnh lên Firebase Storage (cho portfolio)
+  static Future<List<String>> uploadMultipleImages({
+    required List<File> imageFiles,
+    required String userId,
+    required String type, // 'portfolio'
+  }) async {
+    try {
+      final List<String> imageUrls = [];
+      
+      for (var imageFile in imageFiles) {
+        final fileName = '${type}_${DateTime.now().millisecondsSinceEpoch}_${imageFiles.indexOf(imageFile)}${path.extension(imageFile.path)}';
+        final ref = _storage.ref().child('users/$userId/$type/$fileName');
+        
+        final uploadTask = await ref.putFile(imageFile);
+        final downloadUrl = await uploadTask.ref.getDownloadURL();
+        
+        imageUrls.add(downloadUrl);
+        print('Uploaded image ${imageFiles.indexOf(imageFile) + 1}/${imageFiles.length}: $downloadUrl');
+      }
+      
+      print('All ${imageUrls.length} images uploaded successfully');
+      return imageUrls;
+    } catch (e) {
+      print('Error uploading multiple images: $e');
+      return [];
+    }
+  }
+
   /// Chụp ảnh từ camera
   static Future<File?> pickImageFromCamera() async {
     try {

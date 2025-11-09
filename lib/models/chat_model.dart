@@ -1,3 +1,9 @@
+import 'user_profile.dart';
+
+enum ChatType {
+  normal,      // Chat thông thường
+  business,    // Chat từ tìm kiếm nghiệp vụ
+}
 
 class Chat {
   final String id;
@@ -9,6 +15,12 @@ class Chat {
   final bool isOnline;
   final MessageType lastMessageType;
   final String? lastMessageSender;
+  
+  // Business chat fields
+  final ChatType chatType;
+  final UserAccountType? receiverType; // Loại tài khoản của người nhận (designer/contractor/store)
+  final String? searchContext; // Tiêu chí tìm kiếm đã dùng (từ Smart Search)
+  final bool isAutoMessage; // Chat được tạo từ auto message
 
   Chat({
     required this.id,
@@ -20,6 +32,10 @@ class Chat {
     this.isOnline = false,
     this.lastMessageType = MessageType.text,
     this.lastMessageSender,
+    this.chatType = ChatType.normal,
+    this.receiverType,
+    this.searchContext,
+    this.isAutoMessage = false,
   });
 
   Chat copyWith({
@@ -32,6 +48,10 @@ class Chat {
     bool? isOnline,
     MessageType? lastMessageType,
     String? lastMessageSender,
+    ChatType? chatType,
+    UserAccountType? receiverType,
+    String? searchContext,
+    bool? isAutoMessage,
   }) {
     return Chat(
       id: id ?? this.id,
@@ -43,8 +63,14 @@ class Chat {
       isOnline: isOnline ?? this.isOnline,
       lastMessageType: lastMessageType ?? this.lastMessageType,
       lastMessageSender: lastMessageSender ?? this.lastMessageSender,
+      chatType: chatType ?? this.chatType,
+      receiverType: receiverType ?? this.receiverType,
+      searchContext: searchContext ?? this.searchContext,
+      isAutoMessage: isAutoMessage ?? this.isAutoMessage,
     );
   }
+  
+  bool get isBusinessChat => chatType == ChatType.business;
 
   String get initials => name.split(' ').map((word) => word.isNotEmpty ? word[0] : '').take(2).join().toUpperCase();
   String get timeAgo => _formatTimeAgo(lastMessageTime);
@@ -63,6 +89,10 @@ class Message {
   final String? fileUrl;
   final String? fileName;
   final int? fileSize; // bytes
+  
+  // Business message fields
+  final Map<String, dynamic>? businessData; // Dữ liệu nghiệp vụ (quote, portfolio, catalog, etc.)
+  final bool isAutoMessage; // Tin nhắn tự động từ search
 
   Message({
     required this.id,
@@ -77,6 +107,8 @@ class Message {
     this.fileUrl,
     this.fileName,
     this.fileSize,
+    this.businessData,
+    this.isAutoMessage = false,
   });
 
   Message copyWith({
@@ -92,6 +124,8 @@ class Message {
     String? fileUrl,
     String? fileName,
     int? fileSize,
+    Map<String, dynamic>? businessData,
+    bool? isAutoMessage,
   }) {
     return Message(
       id: id ?? this.id,
@@ -106,6 +140,8 @@ class Message {
       fileUrl: fileUrl ?? this.fileUrl,
       fileName: fileName ?? this.fileName,
       fileSize: fileSize ?? this.fileSize,
+      businessData: businessData ?? this.businessData,
+      isAutoMessage: isAutoMessage ?? this.isAutoMessage,
     );
   }
 
@@ -118,6 +154,14 @@ enum MessageType {
   file,
   voice,
   sticker,
+  // Business message types
+  quoteRequest,      // Yêu cầu báo giá
+  quoteResponse,     // Phản hồi báo giá
+  portfolioShare,    // Chia sẻ portfolio (designer)
+  projectTimeline,   // Timeline dự án (contractor)
+  materialCatalog,   // Catalog vật liệu (store)
+  appointmentRequest, // Yêu cầu hẹn gặp
+  appointmentConfirm, // Xác nhận hẹn gặp
 }
 
 enum MessageStatus {

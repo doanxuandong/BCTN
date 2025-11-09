@@ -67,68 +67,75 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
   Widget _buildTypeSelector() {
     return Container(
       color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          Expanded(
-            child: _buildTypeChip(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildTypeChip(
               UserAccountType.designer,
+              'Nhà thiết kế',
               'Nhà thiết kế',
               Icons.design_services,
             ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _buildTypeChip(
+            const SizedBox(width: 8),
+            _buildTypeChip(
               UserAccountType.contractor,
+              'Chủ thầu',
               'Chủ thầu',
               Icons.engineering,
             ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _buildTypeChip(
+            const SizedBox(width: 8),
+            _buildTypeChip(
               UserAccountType.store,
+              'VLXD',
               'Cửa hàng VLXD',
               Icons.storefront,
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildTypeChip(UserAccountType type, String label, IconData icon) {
+  Widget _buildTypeChip(UserAccountType type, String shortLabel, String fullLabel, IconData icon) {
     final isSelected = _selectedType == type;
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _selectedType = type;
-          _currentQuestionIndex = 0;
-          _answers.clear();
-          _loadQuestions();
-        });
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.blue[600] : Colors.grey[200],
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 16, color: isSelected ? Colors.white : Colors.grey[700]),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? Colors.white : Colors.grey[700],
-                fontSize: 12,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+    return Tooltip(
+      message: fullLabel,
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            _selectedType = type;
+            _currentQuestionIndex = 0;
+            _answers.clear();
+            _loadQuestions();
+          });
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.blue[600] : Colors.grey[200],
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 16, color: isSelected ? Colors.white : Colors.grey[700]),
+              const SizedBox(width: 4),
+              Text(
+                shortLabel,
+                style: TextStyle(
+                  color: isSelected ? Colors.white : Colors.grey[700],
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

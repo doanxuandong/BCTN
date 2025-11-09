@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/chat_model.dart';
+import '../../models/user_profile.dart';
 import '../notifications/notification_service.dart';
 import '../user/user_session.dart';
 
@@ -69,6 +70,22 @@ class ChatService {
           final userDoc = await _firestore.collection('Users').doc(otherUserId).get();
           if (userDoc.exists) {
             final userData = userDoc.data()!;
+            // Parse business context
+            final chatTypeStr = chatData['chatType']?.toString() ?? 'normal';
+            final chatType = ChatType.values.firstWhere(
+              (type) => type.toString().split('.').last == chatTypeStr,
+              orElse: () => ChatType.normal,
+            );
+            
+            final receiverTypeStr = chatData['receiverType']?.toString();
+            UserAccountType? receiverType;
+            if (receiverTypeStr != null) {
+              receiverType = UserAccountType.values.firstWhere(
+                (type) => type.toString().split('.').last == receiverTypeStr.split('.').last,
+                orElse: () => UserAccountType.general,
+              );
+            }
+
             final chat = Chat(
               id: doc.id, // Giữ nguyên ID gốc
               name: userData['name'] ?? 'Unknown',
@@ -84,6 +101,10 @@ class ChatService {
                 orElse: () => MessageType.text,
               ),
               lastMessageSender: chatData['lastMessageSender'],
+              chatType: chatType,
+              receiverType: receiverType,
+              searchContext: chatData['searchContext'],
+              isAutoMessage: chatData['isAutoMessage'] ?? false,
             );
             print('✅ Added chat: ${chat.name}');
             chats.add(chat);
@@ -163,6 +184,22 @@ class ChatService {
             final userDoc = await _firestore.collection('Users').doc(otherUserId).get();
             if (userDoc.exists) {
               final userData = userDoc.data()!;
+              // Parse business context
+              final chatTypeStr = chatData['chatType']?.toString() ?? 'normal';
+              final chatType = ChatType.values.firstWhere(
+                (type) => type.toString().split('.').last == chatTypeStr,
+                orElse: () => ChatType.normal,
+              );
+              
+              final receiverTypeStr = chatData['receiverType']?.toString();
+              UserAccountType? receiverType;
+              if (receiverTypeStr != null) {
+                receiverType = UserAccountType.values.firstWhere(
+                  (type) => type.toString().split('.').last == receiverTypeStr.split('.').last,
+                  orElse: () => UserAccountType.general,
+                );
+              }
+
               final chat = Chat(
                 id: doc.id, // Giữ nguyên ID gốc từ Firestore
                 name: userData['name'] ?? 'Unknown',
@@ -178,6 +215,10 @@ class ChatService {
                   orElse: () => MessageType.text,
                 ),
                 lastMessageSender: chatData['lastMessageSender'],
+                chatType: chatType,
+                receiverType: receiverType,
+                searchContext: chatData['searchContext'],
+                isAutoMessage: chatData['isAutoMessage'] ?? false,
               );
               chats.add(chat);
             } else {
@@ -416,6 +457,77 @@ class ChatService {
     };
   }
 
+  /// Lấy thông tin Chat đầy đủ từ chatId
+  static Future<Chat?> getChatById(String chatId) async {
+    try {
+      final currentUser = await UserSession.getCurrentUser();
+      if (currentUser == null) return null;
+
+      final userId = currentUser['userId']?.toString();
+      if (userId == null) return null;
+
+      final chatDoc = await _firestore.collection(_chatsCollection).doc(chatId).get();
+      if (!chatDoc.exists) return null;
+
+      final chatData = chatDoc.data()!;
+      final participants = List<String>.from(chatData['participants'] ?? []);
+      
+      if (!participants.contains(userId)) return null;
+
+      final otherUserId = participants.firstWhere(
+        (id) => id != userId && id.isNotEmpty,
+        orElse: () => '',
+      );
+      
+      if (otherUserId.isEmpty) return null;
+
+      final userDoc = await _firestore.collection('Users').doc(otherUserId).get();
+      if (!userDoc.exists) return null;
+
+      final userData = userDoc.data()!;
+
+      // Parse business context
+      final chatTypeStr = chatData['chatType']?.toString() ?? 'normal';
+      final chatType = ChatType.values.firstWhere(
+        (type) => type.toString().split('.').last == chatTypeStr,
+        orElse: () => ChatType.normal,
+      );
+      
+      final receiverTypeStr = chatData['receiverType']?.toString();
+      UserAccountType? receiverType;
+      if (receiverTypeStr != null) {
+        receiverType = UserAccountType.values.firstWhere(
+          (type) => type.toString().split('.').last == receiverTypeStr.split('.').last,
+          orElse: () => UserAccountType.general,
+        );
+      }
+
+      return Chat(
+        id: chatId,
+        name: userData['name'] ?? 'Unknown',
+        avatarUrl: userData['pic'],
+        lastMessage: chatData['lastMessage'] ?? '',
+        lastMessageTime: DateTime.fromMillisecondsSinceEpoch(
+          chatData['lastMessageTime'] ?? 0,
+        ),
+        unreadCount: chatData['unreadCounts']?[userId] ?? 0,
+        isOnline: chatData['isOnline'] ?? false,
+        lastMessageType: MessageType.values.firstWhere(
+          (type) => type.toString().split('.').last == chatData['lastMessageType'],
+          orElse: () => MessageType.text,
+        ),
+        lastMessageSender: chatData['lastMessageSender'],
+        chatType: chatType,
+        receiverType: receiverType,
+        searchContext: chatData['searchContext'],
+        isAutoMessage: chatData['isAutoMessage'] ?? false,
+      );
+    } catch (e) {
+      print('❌ Error getting chat by ID: $e');
+      return null;
+    }
+  }
+
   static Message _mapMessage(Map<String, dynamic> data, String id, String? myId) {
     final typeStr = data['type']?.toString() ?? 'text';
     final statusStr = data['status']?.toString() ?? 'sent';
@@ -443,6 +555,10 @@ class ChatService {
       isFromMe: fromMe,
       type: type,
       status: status,
+      businessData: data['businessData'] != null 
+          ? Map<String, dynamic>.from(data['businessData']) 
+          : null,
+      isAutoMessage: data['isAutoMessage'] ?? false,
     );
   }
 

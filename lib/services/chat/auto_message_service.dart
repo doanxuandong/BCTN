@@ -73,7 +73,14 @@ class AutoMessageService {
 
       // Tạo hoặc cập nhật chat
       print('📋 Creating/updating chat...');
-      await _createOrUpdateChat(chatId, senderId, receiverId, message);
+      await _createOrUpdateChat(
+        chatId,
+        senderId,
+        receiverId,
+        message,
+        receiverType,
+        originalSearchCriteria,
+      );
       print('✅ Chat created/updated');
 
       // Tạo thông báo tin nhắn mới
@@ -138,6 +145,8 @@ Hãy kết nối để chúng ta có thể trao đổi chi tiết hơn nhé!
     String senderId,
     String receiverId,
     String lastMessage,
+    UserAccountType receiverType,
+    String originalSearchCriteria,
   ) async {
     try {
       print('📋 Creating/updating chat: $chatId');
@@ -160,6 +169,11 @@ Hãy kết nối để chúng ta có thể trao đổi chi tiết hơn nhé!
         'isOnline': false,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
+        // Business chat context
+        'chatType': 'business', // Đánh dấu là business chat
+        'receiverType': receiverType.toString(),
+        'searchContext': originalSearchCriteria,
+        'isAutoMessage': true,
       };
 
       print('📝 Saving chat data: $chatData');
