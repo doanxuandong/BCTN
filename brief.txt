@@ -1,4 +1,4 @@
-Đề tài là: Xaay dựng ứng dụng kết nối những người trong lĩnh vực xây dựng - BuilderConnect. 
+Đề tài là: Xây dựng ứng dụng kết nối những người trong lĩnh vực xây dựng - BuilderConnect. 
 Nhưng chưa thể hiện được tính kết nối bằng những cái riêng, mới mẻ trong ứng dụng.
 1. cần phải làm mục tìm kiếm (SearchScreen) có những cái mới lạ. Bổ sung thêm một screen cho người dùng trả lời những câu hỏi của hệ thống,
 sau đó sẽ hiển thị kết quả tương ứng với câu trả lời của người dùng.

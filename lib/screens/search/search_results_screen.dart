@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import '../../models/user_profile.dart';
+import '../../models/smart_search_question.dart';
 import '../../services/user/user_profile_service.dart';
 import '../../services/search/search_notification_service.dart';
+import '../../services/chat/auto_message_service.dart';
 import '../../components/user_profile_card.dart';
 import '../../services/user/user_session.dart';
+import '../profile/public_profile_screen.dart';
 
 class SearchResultsScreen extends StatefulWidget {
   final UserAccountType? accountType;
@@ -15,6 +18,11 @@ class SearchResultsScreen extends StatefulWidget {
   final double? userLng;
   final double? maxDistanceKm;
   final String? keyword;
+  
+  // Smart Search parameters
+  final List<SmartSearchResult>? smartSearchResults;
+  final Map<String, dynamic>? searchAnswers;
+  final bool isSmartSearch;
 
   const SearchResultsScreen({
     super.key,
@@ -27,6 +35,9 @@ class SearchResultsScreen extends StatefulWidget {
     this.userLng,
     this.maxDistanceKm,
     this.keyword,
+    this.smartSearchResults,
+    this.searchAnswers,
+    this.isSmartSearch = false,
   });
 
   @override
@@ -35,14 +46,25 @@ class SearchResultsScreen extends StatefulWidget {
 
 class _SearchResultsScreenState extends State<SearchResultsScreen> {
   List<UserProfile> _searchResults = [];
+  List<SmartSearchResult> _smartSearchResults = [];
   bool _isLoading = true;
   String? _error;
   bool _isSendingNotifications = false;
+  String _sortBy = 'match'; // 'match', 'distance', 'rating' - only for smart search
 
   @override
   void initState() {
     super.initState();
-    _performSearch();
+    if (widget.isSmartSearch && widget.smartSearchResults != null) {
+      // Smart search: use provided results
+      setState(() {
+        _smartSearchResults = List.from(widget.smartSearchResults!);
+        _isLoading = false;
+      });
+    } else {
+      // Normal search: perform search
+      _performSearch();
+    }
   }
 
   Future<void> _performSearch() async {
@@ -74,6 +96,31 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         _isLoading = false;
       });
     }
+  }
+  
+  List<SmartSearchResult> _getSortedSmartResults() {
+    final results = List<SmartSearchResult>.from(_smartSearchResults);
+    
+    switch (_sortBy) {
+      case 'match':
+        results.sort((a, b) => b.matchScore.compareTo(a.matchScore));
+        break;
+      case 'distance':
+        results.sort((a, b) => a.profile.distanceKm.compareTo(b.profile.distanceKm));
+        break;
+      case 'rating':
+        results.sort((a, b) => b.profile.rating.compareTo(a.profile.rating));
+        break;
+    }
+    
+    return results;
+  }
+  
+  int get _resultCount {
+    if (widget.isSmartSearch) {
+      return _smartSearchResults.length;
+    }
+    return _searchResults.length;
   }
 
   Future<void> _sendNotificationsToAll() async {
@@ -156,6 +203,52 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   }
 
   String _buildSearchCriteriaText() {
+    if (widget.isSmartSearch && widget.searchAnswers != null) {
+      // Build criteria from smart search answers
+      final parts = <String>[];
+      
+      // Add account type
+      if (widget.accountType != null) {
+        switch (widget.accountType!) {
+          case UserAccountType.designer:
+            parts.add('Nhà thiết kế');
+            break;
+          case UserAccountType.contractor:
+            parts.add('Chủ thầu');
+            break;
+          case UserAccountType.store:
+            parts.add('Cửa hàng VLXD');
+            break;
+          default:
+            break;
+        }
+      }
+
+      // Add answers
+      widget.searchAnswers!.forEach((key, value) {
+        if (value != null) {
+          if (value is List && value.isNotEmpty) {
+            final labels = value.map((v) {
+              if (v is Map && v['id'] != null) {
+                return v['id'].toString();
+              }
+              return v.toString();
+            }).join(', ');
+            if (labels.isNotEmpty) {
+              parts.add(labels);
+            }
+          } else if (value is String && value.isNotEmpty) {
+            parts.add(value);
+          } else if (value is num) {
+            parts.add('${value.toStringAsFixed(0)} triệu');
+          }
+        }
+      });
+
+      return parts.isEmpty ? 'Tìm kiếm thông minh' : parts.join(', ');
+    }
+    
+    // Normal search criteria
     List<String> criteria = [];
     
     if (widget.accountType != null) {
@@ -192,16 +285,94 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
     return criteria.isEmpty ? 'Tìm kiếm chung' : criteria.join(', ');
   }
+  
+  Future<void> _sendSmartConnection(UserProfile profile) async {
+    try {
+      // Tạo search criteria text từ answers
+      final criteriaText = _buildSearchCriteriaText();
+
+      final success = await AutoMessageService.sendInterestMessage(
+        receiverId: profile.id,
+        receiverName: profile.name,
+        receiverType: profile.accountType,
+        originalSearchCriteria: criteriaText,
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success
+                ? 'Đã gửi tin nhắn kết nối đến ${profile.name}'
+                : 'Lỗi gửi tin nhắn',
+          ),
+          backgroundColor: success ? Colors.green : Colors.red,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Lỗi: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Kết quả tìm kiếm'),
+        title: Text(widget.isSmartSearch 
+          ? 'Kết quả tìm kiếm thông minh (${_resultCount})'
+          : 'Kết quả tìm kiếm'),
         backgroundColor: Colors.blue[700],
         foregroundColor: Colors.white,
         actions: [
-          if (_searchResults.isNotEmpty)
+          if (widget.isSmartSearch && _smartSearchResults.isNotEmpty)
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.sort),
+              onSelected: (value) {
+                setState(() {
+                  _sortBy = value;
+                });
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'match',
+                  child: Row(
+                    children: [
+                      Icon(Icons.percent, size: 20),
+                      SizedBox(width: 8),
+                      Text('Độ phù hợp'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'distance',
+                  child: Row(
+                    children: [
+                      Icon(Icons.location_on, size: 20),
+                      SizedBox(width: 8),
+                      Text('Khoảng cách'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'rating',
+                  child: Row(
+                    children: [
+                      Icon(Icons.star, size: 20),
+                      SizedBox(width: 8),
+                      Text('Đánh giá'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          if (!widget.isSmartSearch && _searchResults.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.refresh),
               onPressed: _performSearch,
@@ -215,7 +386,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
           Expanded(child: _buildResults()),
         ],
       ),
-      floatingActionButton: _buildFloatingActionButton(),
+      floatingActionButton: widget.isSmartSearch ? null : _buildFloatingActionButton(),
     );
   }
 
@@ -228,10 +399,15 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.search, color: Colors.blue),
+              Icon(
+                widget.isSmartSearch ? Icons.auto_awesome : Icons.search,
+                color: widget.isSmartSearch ? Colors.amber[600] : Colors.blue,
+              ),
               const SizedBox(width: 8),
               Text(
-                'Tìm thấy ${_searchResults.length} kết quả',
+                widget.isSmartSearch
+                  ? 'Tìm thấy ${_resultCount} kết quả phù hợp'
+                  : 'Tìm thấy ${_resultCount} kết quả',
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
@@ -290,47 +466,237 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       );
     }
 
-    if (_searchResults.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.search_off, size: 64, color: Colors.grey[400]),
-            const SizedBox(height: 16),
-            const Text(
-              'Không tìm thấy kết quả phù hợp',
-              style: TextStyle(fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Hãy thử điều chỉnh tiêu chí tìm kiếm',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[600],
-              ),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: () => Navigator.pop(context),
-              icon: const Icon(Icons.arrow_back),
-              label: const Text('Quay lại'),
-            ),
-          ],
-        ),
+    if (widget.isSmartSearch) {
+      if (_smartSearchResults.isEmpty) {
+        return _buildEmptyState(
+          'Không tìm thấy kết quả phù hợp',
+          'Hãy thử điều chỉnh câu trả lời của bạn',
+        );
+      }
+
+      final sortedResults = _getSortedSmartResults();
+      return ListView.builder(
+        itemCount: sortedResults.length,
+        itemBuilder: (context, index) {
+          final result = sortedResults[index];
+          return _buildSmartSearchResultCard(result);
+        },
+      );
+    } else {
+      if (_searchResults.isEmpty) {
+        return _buildEmptyState(
+          'Không tìm thấy kết quả phù hợp',
+          'Hãy thử điều chỉnh tiêu chí tìm kiếm',
+        );
+      }
+
+      return ListView.builder(
+        itemCount: _searchResults.length,
+        itemBuilder: (context, index) {
+          final profile = _searchResults[index];
+          return UserProfileCard(
+            profile: profile,
+            onTap: () => _showProfileDetails(profile),
+            onSendNotification: () => _sendNotificationToUser(profile),
+          );
+        },
       );
     }
-
-    return ListView.builder(
-      itemCount: _searchResults.length,
-      itemBuilder: (context, index) {
-        final profile = _searchResults[index];
-        return UserProfileCard(
-          profile: profile,
-          onTap: () => _showProfileDetails(profile),
-          onSendNotification: () => _sendNotificationToUser(profile),
-        );
-      },
+  }
+  
+  Widget _buildEmptyState(String title, String subtitle) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.search_off, size: 64, color: Colors.grey[400]),
+          const SizedBox(height: 16),
+          Text(
+            title,
+            style: const TextStyle(fontSize: 16),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            subtitle,
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey[600],
+            ),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(context),
+            icon: const Icon(Icons.arrow_back),
+            label: const Text('Quay lại'),
+          ),
+        ],
+      ),
     );
+  }
+  
+  Widget _buildSmartSearchResultCard(SmartSearchResult result) {
+    final profile = result.profile;
+    final matchScore = result.matchScore;
+    final matchColor = _getMatchColor(matchScore);
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      elevation: 2,
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => PublicProfileScreen(userId: profile.id),
+            ),
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  // Avatar
+                  CircleAvatar(
+                    radius: 30,
+                    backgroundImage: profile.displayAvatar != null
+                        ? NetworkImage(profile.displayAvatar!)
+                        : null,
+                    child: profile.displayAvatar == null
+                        ? Text(profile.initials)
+                        : null,
+                  ),
+                  const SizedBox(width: 12),
+                  // Info
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                profile.name,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            // Match score badge
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: matchColor,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                result.matchPercentage,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          profile.typeText,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: profile.typeColor,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        if (profile.distanceKm > 0 && profile.distanceKm < 999)
+                          Text(
+                            'Khoảng cách: ${profile.distanceKm.toStringAsFixed(1)} km',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // Specialties
+              if (profile.specialties.isNotEmpty)
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: profile.specialties.take(3).map((specialty) {
+                    return Chip(
+                      label: Text(
+                        specialty,
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                      backgroundColor: Colors.blue[50],
+                      padding: EdgeInsets.zero,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    );
+                  }).toList(),
+                ),
+              const SizedBox(height: 12),
+              // Rating and Connect button
+              Row(
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.star, size: 16, color: Colors.amber[600]),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${profile.rating.toStringAsFixed(1)}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '(${profile.reviewCount} đánh giá)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Spacer(),
+                  // Connect button
+                  ElevatedButton.icon(
+                    onPressed: () => _sendSmartConnection(profile),
+                    icon: const Icon(Icons.auto_awesome, size: 16),
+                    label: const Text('Kết nối'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue[600],
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+  
+  Color _getMatchColor(double score) {
+    if (score >= 80) return Colors.green[600]!;
+    if (score >= 60) return Colors.blue[600]!;
+    if (score >= 40) return Colors.orange[600]!;
+    return Colors.grey[600]!;
   }
 
   Widget _buildFloatingActionButton() {

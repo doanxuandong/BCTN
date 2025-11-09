@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/user_profile.dart';
 import '../profile/profile_service.dart';
 import '../location/location_service.dart';
+import 'user_session.dart';
 
 class UserProfileService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -153,11 +154,15 @@ class UserProfileService {
       }
       
       if (province != null && province.isNotEmpty) {
-        profiles = profiles.where((profile) => 
-          profile.province.toLowerCase().contains(province.toLowerCase()) ||
-          province.toLowerCase().contains(profile.province.toLowerCase())
-        ).toList();
-        print('After province filter: ${profiles.length} profiles');
+        // Normalize province name để match linh hoạt hơn
+        final normalizedProvince = _normalizeProvinceName(province);
+        profiles = profiles.where((profile) {
+          final normalizedProfileProvince = _normalizeProvinceName(profile.province);
+          return normalizedProfileProvince.contains(normalizedProvince) ||
+                 normalizedProvince.contains(normalizedProfileProvince) ||
+                 normalizedProfileProvince == normalizedProvince;
+        }).toList();
+        print('After province filter: ${profiles.length} profiles (searching for: $province)');
       }
       
       if (keyword != null && keyword.isNotEmpty) {
@@ -174,28 +179,53 @@ class UserProfileService {
       }
       
       // Filter by distance if userLat and userLng are provided
+      // TỐI ƯU: Tính khoảng cách với silent=true để giảm log, chỉ tính cho profiles có location hợp lệ
       if (userLat != null && userLng != null && maxDistanceKm != null && maxDistanceKm > 0) {
-        profiles = profiles.where((profile) {
-          // Nếu profile có vị trí (latitude, longitude != 0)
-          if (profile.latitude != 0 && profile.longitude != 0) {
+        // Validate user location trước
+        if (!LocationService.isValidLocation(userLat, userLng)) {
+          print('⚠️ User location không hợp lệ: ($userLat, $userLng) - Bỏ qua filter distance');
+        } else {
+          profiles = profiles.where((profile) {
+            // Kiểm tra profile có location hợp lệ không
+            if (!LocationService.isValidLocation(profile.latitude, profile.longitude)) {
+              // Nếu không có location hợp lệ, vẫn hiển thị (không filter)
+              profile.distanceKm = 999.0; // Set default distance
+              return true;
+            }
+            
+            // Tính khoảng cách với silent=true để giảm log
             final distance = LocationService.calculateDistance(
               userLat,
               userLng,
               profile.latitude,
               profile.longitude,
+              silent: true, // QUAN TRỌNG: Silent để giảm log khi tính nhiều lần
             );
             profile.distanceKm = distance; // Lưu khoảng cách vào profile
+            
+            // Chỉ filter nếu distance hợp lý (< 20000km) và trong bán kính
+            if (distance >= 20000) {
+              // Distance quá lớn, có thể là lỗi data - bỏ qua profile này
+              return false;
+            }
+            
             return distance <= maxDistanceKm;
-          }
-          // Nếu profile không có vị trí, vẫn hiển thị
-          return true;
-        }).toList();
-        print('After distance filter: ${profiles.length} profiles');
+          }).toList();
+          print('After distance filter: ${profiles.length} profiles');
+        }
       }
       
       // Sort by distance if we have location filters
+      // TỐI ƯU: Chỉ sort nếu có ít hơn 100 profiles để tránh chậm
       if (userLat != null && userLng != null && maxDistanceKm != null) {
-        profiles.sort((a, b) => a.distanceKm.compareTo(b.distanceKm));
+        if (profiles.length > 100) {
+          print('⚠️ Quá nhiều profiles (${profiles.length}), chỉ sort top 100');
+          // Sort và chỉ lấy top 100
+          profiles.sort((a, b) => a.distanceKm.compareTo(b.distanceKm));
+          profiles = profiles.take(100).toList();
+        } else {
+          profiles.sort((a, b) => a.distanceKm.compareTo(b.distanceKm));
+        }
       }
       
       // Limit results
@@ -270,17 +300,82 @@ class UserProfileService {
     }
   }
 
-  /// Cập nhật vị trí người dùng
+  /// Cập nhật vị trí người dùng với validation
+  /// Cải thiện: Thêm validation, error handling, và logging
   static Future<bool> updateLocation(String userId, double latitude, double longitude) async {
     try {
+      // Validate location
+      if (!LocationService.isValidLocation(latitude, longitude)) {
+        print('❌ Invalid location: ($latitude, $longitude)');
+        return false;
+      }
+
+      print('📍 Updating location for userId: $userId');
+      print('   Latitude: $latitude, Longitude: $longitude');
+
       await _firestore.collection(_collection).doc(userId).update({
         'latitude': latitude,
         'longitude': longitude,
+        'locationUpdatedAt': Timestamp.now(), // Thêm timestamp riêng cho location
         'updatedAt': Timestamp.now(),
       });
+
+      print('✅ Location updated successfully');
       return true;
     } catch (e) {
-      print('Error updating location: $e');
+      print('❌ Error updating location: $e');
+      return false;
+    }
+  }
+
+  /// Cập nhật vị trí người dùng hiện tại (tự động lấy từ GPS)
+  /// Cải thiện: Tự động lấy location và update vào Firebase
+  static Future<bool> updateCurrentUserLocation({
+    bool requireAccurateLocation = false,
+  }) async {
+    try {
+      // Lấy userId hiện tại
+      final currentUser = await UserSession.getCurrentUser();
+      if (currentUser == null) {
+        print('❌ No current user found');
+        return false;
+      }
+
+      final userId = currentUser['userId']?.toString();
+      if (userId == null || userId.isEmpty) {
+        print('❌ Invalid userId');
+        return false;
+      }
+
+      print('📍 Updating current user location for userId: $userId');
+
+      // Lấy vị trí hiện tại
+      final position = await LocationService.getCurrentLocation(
+        requireAccurateLocation: requireAccurateLocation,
+      );
+
+      if (position == null) {
+        print('❌ Failed to get current location');
+        return false;
+      }
+
+      // Validate location
+      if (!LocationService.isValidLocation(position.latitude, position.longitude)) {
+        print('❌ Invalid location from GPS: (${position.latitude}, ${position.longitude})');
+        return false;
+      }
+
+      // Update location
+      final success = await updateLocation(userId, position.latitude, position.longitude);
+      
+      if (success) {
+        print('✅ Current user location updated successfully');
+        print('   Accuracy: ${position.accuracy}m');
+      }
+
+      return success;
+    } catch (e) {
+      print('❌ Error updating current user location: $e');
       return false;
     }
   }
@@ -298,6 +393,44 @@ class UserProfileService {
       print('Error updating rating: $e');
       return false;
     }
+  }
+
+  /// Normalize province name để match linh hoạt hơn
+  /// Ví dụ: "TP. Hồ Chí Minh" -> "hồ chí minh", "HCM" -> "hồ chí minh"
+  static String _normalizeProvinceName(String province) {
+    if (province.isEmpty) return '';
+    
+    // Chuyển về lowercase và loại bỏ khoảng trắng thừa
+    String normalized = province.toLowerCase().trim();
+    
+    // Loại bỏ các từ viết tắt phổ biến (TP., TP, Thành phố)
+    normalized = normalized
+        .replaceAll(RegExp(r'^tp\.?\s*'), '')
+        .replaceAll(RegExp(r'^thanh pho\s*'), '')
+        .trim();
+    
+    // Xử lý các tên tỉnh phổ biến - map về tên chuẩn
+    final provinceMappings = {
+      'hcm': 'hồ chí minh',
+      'ho chi minh': 'hồ chí minh',
+      'hn': 'hà nội',
+      'ha noi': 'hà nội',
+      'hanoi': 'hà nội',
+      'dn': 'đà nẵng',
+      'da nang': 'đà nẵng',
+      'danang': 'đà nẵng',
+      'ct': 'cần thơ',
+      'can tho': 'cần thơ',
+      'cantho': 'cần thơ',
+    };
+    
+    // Kiểm tra mapping
+    if (provinceMappings.containsKey(normalized)) {
+      return provinceMappings[normalized]!;
+    }
+    
+    // Nếu không match, trả về normalized (đã loại bỏ TP., TP)
+    return normalized;
   }
 
   /// Chuyển đổi DocumentSnapshot thành UserProfile

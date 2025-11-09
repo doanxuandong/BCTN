@@ -9,6 +9,7 @@ import '../../services/location/location_service.dart';
 import '../../utils/migrate_user_profiles.dart';
 import 'search_results_screen.dart';
 import 'search_notifications_screen.dart';
+import 'smart_search_screen.dart';
 import '../profile/public_profile_screen.dart';
 import '../../services/friends/friends_service.dart';
 import '../../services/user/user_session.dart';
@@ -20,7 +21,9 @@ class SearchScreen extends StatefulWidget {
   State<SearchScreen> createState() => _SearchScreenState();
 }
 
-class _SearchScreenState extends State<SearchScreen> {
+class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderStateMixin {
+  TabController? _tabController;
+  int _currentTabIndex = 0;
   AccountType _selectedType = AccountType.designer;
   double _radiusKm = 10;
   bool _enableRadius = false;
@@ -55,11 +58,33 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   void initState() {
     super.initState();
+    _initializeTabController();
     _selectedProvince = null;
     _selectedRegion = null;
     _specialtiesController = TextEditingController(text: _customSpecialties);
     _listenToNotifications();
     _loadRealUsers(); // Load dữ liệu thật từ Firebase
+  }
+  
+  void _initializeTabController() {
+    _tabController?.dispose(); // Dispose nếu đã tồn tại (trong trường hợp hot reload)
+    _tabController = TabController(length: 2, vsync: this);
+    _tabController!.addListener(_handleTabChange);
+  }
+
+  void _handleTabChange() {
+    if (_tabController != null && !_tabController!.indexIsChanging) {
+      setState(() {
+        _currentTabIndex = _tabController!.index;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _tabController?.dispose();
+    _specialtiesController.dispose();
+    super.dispose();
   }
 
   @override
@@ -74,90 +99,120 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   @override
-  void dispose() {
-    _specialtiesController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    // Nếu TabController chưa được khởi tạo (trường hợp hot reload), khởi tạo ngay
+    _tabController ??= TabController(length: 2, vsync: this, initialIndex: _currentTabIndex)
+      ..addListener(_handleTabChange);
+    
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
         title: const Text('Tìm kiếm'),
         backgroundColor: Colors.blue[700],
         foregroundColor: Colors.white,
-        actions: [
-          Stack(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.notifications),
-                onPressed: _openNotifications,
-                tooltip: 'Thông báo tìm kiếm',
-              ),
-              if (_unreadNotificationsCount > 0)
-                Positioned(
-                  right: 8,
-                  top: 8,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    constraints: const BoxConstraints(
-                      minWidth: 16,
-                      minHeight: 16,
-                    ),
-                    child: Text(
-                      '$_unreadNotificationsCount',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          IconButton(
-            icon: Icon(_showFilters ? Icons.filter_list_off : Icons.filter_list),
-            onPressed: () {
-              setState(() {
-                _showFilters = !_showFilters;
-              });
-            },
-            tooltip: _showFilters ? 'Ẩn bộ lọc' : 'Hiện bộ lọc',
-          ),
-          IconButton(
-            onPressed: _resetFilters,
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Đặt lại',
-          ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          await _loadRealUsers();
-        },
-        child: Column(
-          children: [
-            _buildTypeSelector(),
-            if (_showFilters) ...[
-              Flexible(
-                child: SingleChildScrollView(
-                  child: _buildFilters(),
-                ),
-              ),
-            ],
-            _buildKeywordBar(),
-            const SizedBox(height: 8),
-            _buildResultHeader(),
-            Expanded(child: _buildResults()),
+        bottom: TabBar(
+          controller: _tabController!,
+          indicatorColor: Colors.white,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          tabs: const [
+            Tab(
+              icon: Icon(Icons.search),
+              text: 'Tìm kiếm',
+            ),
+            Tab(
+              icon: Icon(Icons.auto_awesome),
+              text: 'Tìm kiếm thông minh',
+            ),
           ],
         ),
+        actions: [
+          // Chỉ hiển thị actions ở tab 0 (tìm kiếm thông thường)
+          if (_currentTabIndex == 0) ...[
+            Stack(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.notifications),
+                  onPressed: _openNotifications,
+                  tooltip: 'Thông báo tìm kiếm',
+                ),
+                if (_unreadNotificationsCount > 0)
+                  Positioned(
+                    right: 8,
+                    top: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 16,
+                        minHeight: 16,
+                      ),
+                      child: Text(
+                        '$_unreadNotificationsCount',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            IconButton(
+              icon: Icon(_showFilters ? Icons.filter_list_off : Icons.filter_list),
+              onPressed: () {
+                setState(() {
+                  _showFilters = !_showFilters;
+                });
+              },
+              tooltip: _showFilters ? 'Ẩn bộ lọc' : 'Hiện bộ lọc',
+            ),
+            IconButton(
+              onPressed: _resetFilters,
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Đặt lại',
+            ),
+          ],
+        ],
+      ),
+      body: TabBarView(
+        controller: _tabController!,
+        children: [
+          // Tab 1: Tìm kiếm thông thường
+          _buildNormalSearch(),
+          // Tab 2: Tìm kiếm thông minh
+          const SmartSearchScreen(),
+        ],
+      ),
+    );
+  }
+
+  /// Tab 1: Tìm kiếm thông thường (SearchScreen hiện tại)
+  Widget _buildNormalSearch() {
+    return RefreshIndicator(
+      onRefresh: () async {
+        await _loadRealUsers();
+      },
+      child: Column(
+        children: [
+          _buildTypeSelector(),
+          if (_showFilters) ...[
+            Flexible(
+              child: SingleChildScrollView(
+                child: _buildFilters(),
+              ),
+            ),
+          ],
+          _buildKeywordBar(),
+          const SizedBox(height: 8),
+          _buildResultHeader(),
+          Expanded(child: _buildResults()),
+        ],
       ),
     );
   }
@@ -804,21 +859,35 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<void> _applyFilters() async {
-    // Lấy vị trí GPS hiện tại để tính khoảng cách chính xác
-    final position = await LocationService.getCurrentLocation();
-    double userLat = 10.8231; // Default: TP.HCM
-    double userLng = 106.6297;
-
-    if (position != null) {
-      userLat = position.latitude;
-      userLng = position.longitude;
-      print('✅ _applyFilters: Got user location: $userLat, $userLng');
-    } else {
-      print('⚠️ _applyFilters: Using default location (TP.HCM)');
+    // Hiển thị loading indicator
+    if (mounted) {
+      setState(() {
+        _isLoadingRealUsers = true;
+      });
     }
 
-    // Sử dụng dữ liệu thật từ Firebase nếu có, nếu không thì dùng dữ liệu tĩnh
-    var data = _realUsers.isNotEmpty ? _convertUserProfilesToSearchAccounts(_realUsers, userLat, userLng) : SearchData.accounts;
+    try {
+      // Lấy vị trí GPS hiện tại để tính khoảng cách chính xác
+      // TỐI ƯU: Dùng getCurrentLocationQuick để nhanh hơn
+      final position = await LocationService.getCurrentLocationQuick();
+      double userLat = 10.8231; // Default: TP.HCM
+      double userLng = 106.6297;
+
+      if (position != null && LocationService.isValidLocation(position.latitude, position.longitude)) {
+        userLat = position.latitude;
+        userLng = position.longitude;
+        print('✅ _applyFilters: Got user location: $userLat, $userLng');
+      } else {
+        print('⚠️ _applyFilters: Using default location (TP.HCM)');
+      }
+
+      // TỐI ƯU: Chuyển việc convert sang isolate/compute để không block UI thread
+      // Tạm thời vẫn chạy trên main thread nhưng đã tối ưu trong _convertUserProfilesToSearchAccounts
+      var data = _realUsers.isNotEmpty 
+          ? _convertUserProfilesToSearchAccounts(_realUsers, userLat, userLng) 
+          : SearchData.accounts;
+      
+      print('📊 Processing ${data.length} search accounts');
 
     data = data.where((a) => a.type == _selectedType).toList();
 
@@ -885,9 +954,26 @@ class _SearchScreenState extends State<SearchScreen> {
       ).toList();
     }
 
-    setState(() {
-      _results = data;
-    });
+      setState(() {
+        _results = data;
+        _isLoadingRealUsers = false;
+      });
+      
+      print('✅ Filter applied: ${_results.length} results');
+    } catch (e) {
+      print('❌ Error in _applyFilters: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingRealUsers = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi khi áp dụng bộ lọc: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _resetFilters() async {
@@ -955,17 +1041,22 @@ class _SearchScreenState extends State<SearchScreen> {
     }
 
     try {
-      // Lấy vị trí hiện tại của người dùng
-      final position = await LocationService.getCurrentLocation();
+      // Lấy vị trí hiện tại của người dùng với LocationService đã cải thiện
+      final position = await LocationService.getCurrentLocation(
+        requireAccurateLocation: false, // Không yêu cầu quá chính xác để nhanh hơn
+      );
       double userLat = 10.8231; // Default: TP.HCM
       double userLng = 106.6297;
 
-      if (position != null) {
+      if (position != null && LocationService.isValidLocation(position.latitude, position.longitude)) {
         userLat = position.latitude;
         userLng = position.longitude;
-        print('✅ Got user location: $userLat, $userLng');
+        print('✅ Got user location: $userLat, $userLng (accuracy: ${position.accuracy}m)');
       } else {
         print('⚠️ Could not get location, using default (TP.HCM)');
+        if (position != null) {
+          print('   Location from GPS was invalid: (${position.latitude}, ${position.longitude})');
+        }
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -1149,12 +1240,29 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   /// Convert UserProfile sang SearchAccount để hiển thị
+  /// TỐI ƯU: Giảm log và chỉ tính khoảng cách cho profiles hợp lệ
   List<SearchAccount> _convertUserProfilesToSearchAccounts(
     List<UserProfile> profiles, 
     double userLat, 
     double userLng
   ) {
-    return profiles.map((profile) {
+    // Validate user location trước
+    final hasValidUserLocation = LocationService.isValidLocation(userLat, userLng);
+    
+    if (!hasValidUserLocation) {
+      print('⚠️ User location không hợp lệ: ($userLat, $userLng) - Sử dụng distance mặc định');
+    }
+    
+    // Giới hạn số lượng profiles để xử lý (tránh ANR)
+    final profilesToProcess = profiles.length > 200 
+        ? profiles.take(200).toList() 
+        : profiles;
+    
+    if (profiles.length > 200) {
+      print('⚠️ Quá nhiều profiles (${profiles.length}), chỉ xử lý 200 đầu tiên');
+    }
+    
+    return profilesToProcess.map((profile) {
       // Map UserAccountType sang AccountType
       // Chỉ map các loại designer, contractor, store
       // Bỏ qua general và các loại khác
@@ -1188,14 +1296,23 @@ class _SearchScreenState extends State<SearchScreen> {
       }).toList();
 
       // Tính khoảng cách dùng LocationService (chính xác hơn)
+      // TỐI ƯU: Chỉ tính nếu có location hợp lệ và user location hợp lệ
       double distance = 999.0; // Mặc định cho account không có GPS
-      if (profile.latitude != 0.0 && profile.longitude != 0.0) {
+      
+      if (hasValidUserLocation && LocationService.isValidLocation(profile.latitude, profile.longitude)) {
+        // QUAN TRỌNG: Silent=true để giảm log khi tính nhiều lần
         distance = LocationService.calculateDistance(
           userLat,
           userLng,
           profile.latitude,
           profile.longitude,
+          silent: true, // Silent để tránh spam log
         );
+        
+        // Nếu distance quá lớn (có thể là lỗi data), sử dụng default
+        if (distance >= 20000) {
+          distance = 999.0;
+        }
       }
 
       return SearchAccount(

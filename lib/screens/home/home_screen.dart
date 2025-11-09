@@ -12,6 +12,7 @@ import '../chat/chat_conversations_screen.dart';
 import '../auth/login.dart';
 import '../social/create_post_screen.dart';
 import '../../services/user/user_session.dart';
+import '../../services/user/user_profile_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -29,6 +30,28 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadPosts();
+    _updateUserLocation(); // Cập nhật location khi app mở
+  }
+
+  /// Cập nhật vị trí người dùng khi app mở
+  /// Chạy ở background, không chặn UI
+  Future<void> _updateUserLocation() async {
+    try {
+      // Update location ở background (không require accurate để nhanh hơn)
+      UserProfileService.updateCurrentUserLocation(
+        requireAccurateLocation: false,
+      ).then((success) {
+        if (success) {
+          debugPrint('[Home] User location updated successfully');
+        } else {
+          debugPrint('[Home] Failed to update user location');
+        }
+      }).catchError((e) {
+        debugPrint('[Home] Error updating location: $e');
+      });
+    } catch (e) {
+      debugPrint('[Home] Error in _updateUserLocation: $e');
+    }
   }
 
   Future<void> _loadPosts() async {

@@ -15,7 +15,7 @@ class ChatService {
       if (currentUser == null) return [];
 
       final userId = currentUser['userId']?.toString();
-      if (userId == null) return [];
+      if (userId == null || userId.isEmpty) return [];
 
       print('🔍 Getting chats for userId: $userId');
       
@@ -27,24 +27,56 @@ class ChatService {
       print('📊 Found ${snapshot.docs.length} chats');
 
       final chats = <Chat>[];
+      final seenChatIds = <String>{}; // Set để tránh duplicate
+      
       for (var doc in snapshot.docs) {
         final chatData = doc.data();
         final participants = List<String>.from(chatData['participants'] ?? []);
-        final otherUserId = participants.firstWhere((id) => id != userId, orElse: () => '');
         
-        print('🔍 Chat ID: ${doc.id}, otherUserId: $otherUserId');
+        // Đảm bảo participants chứa userId
+        if (!participants.contains(userId)) {
+          print('⚠️ Chat ${doc.id} does not contain userId: $userId');
+          continue;
+        }
         
-        if (otherUserId.isNotEmpty) {
-          // Lấy thông tin người dùng khác
+        // Tìm otherUserId (bỏ qua userId hiện tại)
+        final otherUserId = participants.firstWhere(
+          (id) => id != userId && id.isNotEmpty, 
+          orElse: () => '',
+        );
+        
+        if (otherUserId.isEmpty) {
+          print('⚠️ Chat ${doc.id} has no valid otherUserId');
+          continue;
+        }
+        
+        // Tạo normalized chat ID để tránh duplicate
+        final normalizedParticipants = [userId, otherUserId]..sort();
+        final normalizedChatId = normalizedParticipants.join('_');
+        
+        // Kiểm tra duplicate
+        if (seenChatIds.contains(normalizedChatId)) {
+          print('⚠️ Duplicate chat detected: $normalizedChatId (original ID: ${doc.id})');
+          // Ưu tiên chat có lastMessageTime mới hơn (đã sắp xếp sau)
+          continue;
+        }
+        seenChatIds.add(normalizedChatId);
+        
+        print('🔍 Chat ID: ${doc.id}, otherUserId: $otherUserId, normalized: $normalizedChatId');
+        
+        // Lấy thông tin người dùng khác
+        try {
           final userDoc = await _firestore.collection('Users').doc(otherUserId).get();
           if (userDoc.exists) {
             final userData = userDoc.data()!;
             final chat = Chat(
-              id: doc.id,
+              id: doc.id, // Giữ nguyên ID gốc
               name: userData['name'] ?? 'Unknown',
               avatarUrl: userData['pic'],
               lastMessage: chatData['lastMessage'] ?? '',
-              lastMessageTime: DateTime.fromMillisecondsSinceEpoch(chatData['lastMessageTime'] ?? 0),
+              lastMessageTime: DateTime.fromMillisecondsSinceEpoch(
+                chatData['lastMessageTime'] ?? 0,
+              ),
               unreadCount: chatData['unreadCounts']?[userId] ?? 0,
               isOnline: chatData['isOnline'] ?? false,
               lastMessageType: MessageType.values.firstWhere(
@@ -55,14 +87,18 @@ class ChatService {
             );
             print('✅ Added chat: ${chat.name}');
             chats.add(chat);
+          } else {
+            print('⚠️ User $otherUserId not found');
           }
+        } catch (e) {
+          print('❌ Error loading user $otherUserId: $e');
         }
       }
 
-      // Sort by last message time manually
+      // Sort by last message time (mới nhất trước)
       chats.sort((a, b) => b.lastMessageTime.compareTo(a.lastMessageTime));
       
-      print('✅ Returning ${chats.length} chats');
+      print('✅ Returning ${chats.length} unique chats (after deduplication)');
       return chats;
     } catch (e) {
       print('❌ Error getting chats: $e');
@@ -71,36 +107,70 @@ class ChatService {
   }
 
   /// Lắng nghe chats realtime
+  /// SỬA BUG: Filter đúng theo userId, tránh duplicate chats
   static Stream<List<Chat>> listenToChats() {
-    return _firestore
-        .collection(_chatsCollection)
-        .where('participants', arrayContains: '') // Không filter, lấy tất cả
-        .snapshots()
-        .asyncMap((snapshot) async {
-      final currentUser = await UserSession.getCurrentUser();
-      if (currentUser == null) return <Chat>[];
+    // Lấy userId trước, sau đó tạo stream với filter đúng
+    return Stream.fromFuture(_getCurrentUserId()).asyncExpand((userId) {
+      if (userId == null || userId.isEmpty) {
+        return Stream.value(<Chat>[]);
+      }
 
-      final userId = currentUser['userId']?.toString();
-      if (userId == null) return <Chat>[];
-
-      final chats = <Chat>[];
-      for (var doc in snapshot.docs) {
-        final chatData = doc.data();
-        final participants = List<String>.from(chatData['participants'] ?? []);
+      print('🔍 listenToChats: Listening for userId: $userId');
+      
+      // SỬA BUG: Filter đúng theo userId thay vì arrayContains: ''
+      return _firestore
+          .collection(_chatsCollection)
+          .where('participants', arrayContains: userId)
+          .snapshots()
+          .asyncMap((snapshot) async {
+        final chats = <Chat>[];
+        final seenChatIds = <String>{}; // Set để tránh duplicate
         
-        if (participants.contains(userId)) {
-          final otherUserId = participants.firstWhere((id) => id != userId, orElse: () => '');
+        for (var doc in snapshot.docs) {
+          final chatData = doc.data();
+          final participants = List<String>.from(chatData['participants'] ?? []);
           
-          if (otherUserId.isNotEmpty) {
+          // Đảm bảo participants chứa userId (double check)
+          if (!participants.contains(userId)) {
+            print('⚠️ Chat ${doc.id} does not contain userId: $userId');
+            continue;
+          }
+          
+          // Tìm otherUserId (bỏ qua userId hiện tại)
+          final otherUserId = participants.firstWhere(
+            (id) => id != userId && id.isNotEmpty, 
+            orElse: () => '',
+          );
+          
+          if (otherUserId.isEmpty) {
+            print('⚠️ Chat ${doc.id} has no valid otherUserId');
+            continue;
+          }
+          
+          // Tạo normalized chat ID để tránh duplicate
+          final normalizedParticipants = [userId, otherUserId]..sort();
+          final normalizedChatId = normalizedParticipants.join('_');
+          
+          // Kiểm tra duplicate - nếu đã thấy chat này với ID khác, skip
+          if (seenChatIds.contains(normalizedChatId)) {
+            print('⚠️ Duplicate chat detected: $normalizedChatId (original ID: ${doc.id})');
+            continue;
+          }
+          seenChatIds.add(normalizedChatId);
+          
+          // Lấy thông tin người dùng khác
+          try {
             final userDoc = await _firestore.collection('Users').doc(otherUserId).get();
             if (userDoc.exists) {
               final userData = userDoc.data()!;
               final chat = Chat(
-                id: doc.id,
+                id: doc.id, // Giữ nguyên ID gốc từ Firestore
                 name: userData['name'] ?? 'Unknown',
                 avatarUrl: userData['pic'],
                 lastMessage: chatData['lastMessage'] ?? '',
-                lastMessageTime: DateTime.fromMillisecondsSinceEpoch(chatData['lastMessageTime'] ?? 0),
+                lastMessageTime: DateTime.fromMillisecondsSinceEpoch(
+                  chatData['lastMessageTime'] ?? 0,
+                ),
                 unreadCount: chatData['unreadCounts']?[userId] ?? 0,
                 isOnline: chatData['isOnline'] ?? false,
                 lastMessageType: MessageType.values.firstWhere(
@@ -110,15 +180,33 @@ class ChatService {
                 lastMessageSender: chatData['lastMessageSender'],
               );
               chats.add(chat);
+            } else {
+              print('⚠️ User $otherUserId not found in database');
             }
+          } catch (e) {
+            print('❌ Error loading user $otherUserId: $e');
           }
         }
-      }
 
-      // Sort by last message time
-      chats.sort((a, b) => b.lastMessageTime.compareTo(a.lastMessageTime));
-      return chats;
+        // Sort by last message time (mới nhất trước)
+        chats.sort((a, b) => b.lastMessageTime.compareTo(a.lastMessageTime));
+        
+        print('✅ listenToChats: Found ${chats.length} unique chats for userId: $userId');
+        return chats;
+      });
     });
+  }
+
+  /// Helper method để lấy current userId
+  static Future<String?> _getCurrentUserId() async {
+    try {
+      final currentUser = await UserSession.getCurrentUser();
+      if (currentUser == null) return null;
+      return currentUser['userId']?.toString();
+    } catch (e) {
+      print('❌ Error getting current userId: $e');
+      return null;
+    }
   }
 
   /// Tạo chat mới
