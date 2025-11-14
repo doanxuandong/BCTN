@@ -108,6 +108,12 @@ class MessageBubble extends StatelessWidget {
       case MessageType.appointmentRequest:
       case MessageType.appointmentConfirm:
         return _buildAppointmentMessage();
+      // Pipeline collaboration types
+      case MessageType.collaborationRequest:
+      case MessageType.collaborationAccept:
+      case MessageType.designHandoff:
+      case MessageType.constructionPlanShare:
+        return _buildCollaborationMessage();
     }
   }
 
@@ -1066,5 +1072,92 @@ class MessageBubble extends StatelessWidget {
 
   String _formatDateTime(DateTime dateTime) {
     return '${dateTime.day}/${dateTime.month}/${dateTime.year} ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+  }
+
+  Widget _buildCollaborationMessage() {
+    final businessData = message.businessData ?? {};
+    String title;
+    String description;
+    IconData icon;
+    Color color;
+
+    switch (message.type) {
+      case MessageType.collaborationRequest:
+        title = 'Yêu cầu hợp tác';
+        description = businessData['message'] as String? ?? 'Đã gửi yêu cầu hợp tác';
+        icon = Icons.handshake;
+        color = Colors.orange;
+        break;
+      case MessageType.collaborationAccept:
+        title = 'Đã chấp nhận hợp tác';
+        description = 'Đối tác đã chấp nhận yêu cầu hợp tác';
+        icon = Icons.check_circle;
+        color = Colors.green;
+        break;
+      case MessageType.designHandoff:
+        title = 'Gửi thiết kế';
+        description = businessData['message'] as String? ?? 'Đã gửi file thiết kế cho chủ thầu';
+        icon = Icons.architecture;
+        color = Colors.purple;
+        break;
+      case MessageType.constructionPlanShare:
+        title = 'Gửi kế hoạch thi công';
+        description = businessData['message'] as String? ?? 'Đã gửi kế hoạch thi công cho cửa hàng VLXD';
+        icon = Icons.construction;
+        color = Colors.blue;
+        break;
+      default:
+        title = 'Thông báo';
+        description = message.content;
+        icon = Icons.info;
+        color = Colors.grey;
+    }
+
+    return Builder(
+      builder: (context) => Container(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.75,
+        ),
+        decoration: BoxDecoration(
+          color: message.isFromMe ? color : Colors.grey[200],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: message.isFromMe ? color : Colors.grey[400]!,
+            width: 1,
+          ),
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: message.isFromMe ? Colors.white : color, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: message.isFromMe ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              description,
+              style: TextStyle(
+                fontSize: 14,
+                color: message.isFromMe ? Colors.white70 : Colors.black87,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

@@ -59,18 +59,21 @@ class LocationService {
     LocationAccuracy accuracy = LocationAccuracy.high,
     int maxRetries = _maxRetries,
     bool requireAccurateLocation = true,
+    bool silent = false, // Nếu true, sẽ giảm log (chỉ log lỗi quan trọng)
   }) async {
     try {
-      print('🔍 LocationService.getCurrentLocation() called');
-      print('   Accuracy: $accuracy, Max retries: $maxRetries');
+      if (!silent) {
+        print('🔍 LocationService.getCurrentLocation() called');
+        print('   Accuracy: $accuracy, Max retries: $maxRetries');
+      }
       
       // Kiểm tra quyền
       final hasPermission = await checkPermission();
       if (!hasPermission) {
-        print('❌ No location permission - requesting...');
+        if (!silent) print('❌ No location permission - requesting...');
         final granted = await requestPermission();
         if (!granted) {
-          print('❌ Location permission not granted');
+          if (!silent) print('❌ Location permission not granted');
           return null;
         }
       }
@@ -78,8 +81,27 @@ class LocationService {
       // Kiểm tra dịch vụ GPS
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        print('❌ Location services are disabled');
+        if (!silent) print('❌ Location services are disabled');
         return null;
+      }
+
+      // TỐI ƯU: Thử lấy cached location trước (nhanh hơn)
+      try {
+        final lastKnownPosition = await Geolocator.getLastKnownPosition();
+        if (lastKnownPosition != null) {
+          final age = DateTime.now().difference(lastKnownPosition.timestamp);
+          // Nếu cached location còn mới (< 5 phút) và không yêu cầu chính xác cao, dùng luôn
+          if (age.inMinutes < 5 && !requireAccurateLocation) {
+            if (!silent) {
+              print('✅ Using cached location (age: ${age.inMinutes}m)');
+              print('   Lat: ${lastKnownPosition.latitude}, Lng: ${lastKnownPosition.longitude}');
+            }
+            return lastKnownPosition;
+          }
+        }
+      } catch (e) {
+        // Ignore error khi lấy cached location, sẽ thử lấy location mới
+        if (!silent) print('⚠️ Could not get cached location: $e');
       }
 
       // Retry mechanism
@@ -88,22 +110,28 @@ class LocationService {
       
       for (int attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-          print('📍 Attempt $attempt/$maxRetries: Getting location...');
+          if (!silent && attempt > 1) {
+            print('📍 Attempt $attempt/$maxRetries: Getting location...');
+          }
           
+          // TỐI ƯU: Giảm timeout từ 15s xuống 10s (nhanh hơn)
           // Lấy vị trí hiện tại
           final position = await Geolocator.getCurrentPosition(
             desiredAccuracy: accuracy,
-            timeLimit: const Duration(seconds: 15), // Tăng timeout lên 15 giây
+            timeLimit: const Duration(seconds: 10), // Giảm timeout xuống 10 giây
           );
 
-          print('📍 Position retrieved:');
-          print('   Lat: ${position.latitude}, Lng: ${position.longitude}');
-          print('   Accuracy: ${position.accuracy}m');
-          print('   Timestamp: ${position.timestamp}');
+          if (!silent) {
+            print('✅ Position retrieved:');
+            print('   Lat: ${position.latitude}, Lng: ${position.longitude}');
+            print('   Accuracy: ${position.accuracy}m');
+          }
 
           // Kiểm tra accuracy
           if (position.accuracy <= _minAccuracyMeters) {
-            print('✅ Location is accurate (${position.accuracy}m <= ${_minAccuracyMeters}m)');
+            if (!silent) {
+              print('✅ Location is accurate (${position.accuracy}m <= ${_minAccuracyMeters}m)');
+            }
             return position;
           }
 
@@ -111,22 +139,39 @@ class LocationService {
           if (position.accuracy < bestAccuracy) {
             bestPosition = position;
             bestAccuracy = position.accuracy;
-            print('⚠️ Location accuracy ${position.accuracy}m is not ideal, but keeping as best so far');
+            if (!silent) {
+              print('⚠️ Location accuracy ${position.accuracy}m is not ideal, but keeping as best so far');
+            }
           }
 
           // Nếu không yêu cầu location chính xác, trả về ngay
           if (!requireAccurateLocation) {
-            print('✅ Location retrieved (accuracy not strictly required)');
+            if (!silent) {
+              print('✅ Location retrieved (accuracy not strictly required)');
+            }
             return position;
           }
 
           // Nếu không phải lần cuối, chờ một chút rồi thử lại
           if (attempt < maxRetries) {
-            print('⏳ Waiting ${_retryDelay.inSeconds}s before retry...');
+            if (!silent) {
+              print('⏳ Waiting ${_retryDelay.inSeconds}s before retry...');
+            }
             await Future.delayed(_retryDelay);
           }
         } catch (e) {
-          print('❌ Error in attempt $attempt: $e');
+          // CHỈ log lỗi khi không silent hoặc là lỗi quan trọng
+          if (!silent || attempt == maxRetries) {
+            // Chỉ log timeout nếu là attempt cuối, hoặc không phải timeout
+            if (e.toString().contains('TimeoutException')) {
+              if (attempt == maxRetries) {
+                print('⚠️ Timeout getting location (attempt $attempt/$maxRetries)');
+              }
+              // Không log timeout ở attempt đầu để giảm log
+            } else {
+              print('❌ Error in attempt $attempt: $e');
+            }
+          }
           if (attempt < maxRetries) {
             await Future.delayed(_retryDelay);
           }
@@ -135,12 +180,16 @@ class LocationService {
 
       // Nếu có position tốt nhất, trả về nó (cảnh báo về accuracy)
       if (bestPosition != null) {
-        print('⚠️ Returning best available location with accuracy ${bestAccuracy}m');
-        print('   (Requested accuracy: ${_minAccuracyMeters}m)');
+        if (!silent) {
+          print('⚠️ Returning best available location with accuracy ${bestAccuracy}m');
+          print('   (Requested accuracy: ${_minAccuracyMeters}m)');
+        }
         return bestPosition;
       }
 
-      print('❌ Failed to get location after $maxRetries attempts');
+      if (!silent) {
+        print('❌ Failed to get location after $maxRetries attempts');
+      }
       return null;
     } catch (e) {
       print('❌ Error getting location: $e');
@@ -149,11 +198,13 @@ class LocationService {
   }
 
   /// Lấy vị trí với accuracy thấp hơn (nhanh hơn, ít chính xác hơn)
-  static Future<Position?> getCurrentLocationQuick() async {
+  /// TỐI ƯU: Sử dụng silent mode để giảm log khi gọi từ SearchScreen
+  static Future<Position?> getCurrentLocationQuick({bool silent = true}) async {
     return getCurrentLocation(
       accuracy: LocationAccuracy.medium,
       maxRetries: 2,
       requireAccurateLocation: false,
+      silent: silent, // Mặc định silent để giảm log
     );
   }
 

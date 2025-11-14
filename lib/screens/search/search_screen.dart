@@ -7,6 +7,7 @@ import '../../services/search/search_notification_service.dart';
 import '../../services/user/user_profile_service.dart';
 import '../../services/location/location_service.dart';
 import '../../utils/migrate_user_profiles.dart';
+import '../../utils/province_coordinates.dart';
 import 'search_results_screen.dart';
 import 'search_notifications_screen.dart';
 import 'smart_search_screen.dart';
@@ -874,11 +875,34 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
       double userLng = 106.6297;
 
       if (position != null && LocationService.isValidLocation(position.latitude, position.longitude)) {
-        userLat = position.latitude;
-        userLng = position.longitude;
-        print('✅ _applyFilters: Got user location: $userLat, $userLng');
+        final gpsLat = position.latitude;
+        final gpsLng = position.longitude;
+        
+        // QUAN TRỌNG: Kiểm tra xem GPS location có phải là location mặc định từ emulator không
+        // Location mặc định từ emulator: 37.4219983, -122.084 (California, Mỹ)
+        // Hoặc location ngoài Việt Nam (latitude < 8 hoặc > 23, longitude < 102 hoặc > 110)
+        final isInVietnam = gpsLat >= 8.5 && gpsLat <= 23.4 && 
+                            gpsLng >= 102.1 && gpsLng <= 109.5;
+        final isLikelyDefaultLocation = (gpsLat == 37.4219983 && gpsLng == -122.084) ||
+                                        (gpsLat >= 37.0 && gpsLat <= 38.0 && 
+                                         gpsLng >= -123.0 && gpsLng <= -122.0);
+        
+        if (!isInVietnam || isLikelyDefaultLocation) {
+          // GPS location không ở Việt Nam hoặc là location mặc định từ emulator
+          // Sử dụng default location (TP.HCM) thay vì GPS location
+          print('⚠️ _applyFilters: GPS location không hợp lệ hoặc ngoài Việt Nam: ($gpsLat, $gpsLng)');
+          print('   Dùng default location (TP.HCM): $userLat, $userLng');
+        } else {
+          // GPS location hợp lệ và ở Việt Nam
+          userLat = gpsLat;
+          userLng = gpsLng;
+          print('✅ _applyFilters: Got user location from GPS: $userLat, $userLng');
+        }
       } else {
-        print('⚠️ _applyFilters: Using default location (TP.HCM)');
+        print('⚠️ _applyFilters: GPS location không hợp lệ, dùng default location (TP.HCM): $userLat, $userLng');
+        if (position != null) {
+          print('   GPS returned: (${position.latitude}, ${position.longitude})');
+        }
       }
 
       // TỐI ƯU: Chuyển việc convert sang isolate/compute để không block UI thread
@@ -1297,21 +1321,82 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
 
       // Tính khoảng cách dùng LocationService (chính xác hơn)
       // TỐI ƯU: Chỉ tính nếu có location hợp lệ và user location hợp lệ
-      double distance = 999.0; // Mặc định cho account không có GPS
+      double distance = -1.0; // -1.0 = Không có GPS, hiển thị "N/A" hoặc ẩn distance
       
-      if (hasValidUserLocation && LocationService.isValidLocation(profile.latitude, profile.longitude)) {
-        // QUAN TRỌNG: Silent=true để giảm log khi tính nhiều lần
+      // Kiểm tra profile có location hợp lệ không
+      bool profileHasValidLocation = LocationService.isValidLocation(profile.latitude, profile.longitude);
+      double profileLat = profile.latitude;
+      double profileLng = profile.longitude;
+      
+      // QUAN TRỌNG: Ưu tiên sử dụng tọa độ từ province nếu profile location không ở Việt Nam
+      // Việt Nam nằm trong khoảng: latitude 8.5-23.4, longitude 102.1-109.5
+      // Location mặc định từ emulator: 37.4219983, -122.084 (California, Mỹ)
+      // Nếu profile có province name, LUÔN kiểm tra và thay thế nếu cần
+      if (profile.province.isNotEmpty) {
+        final isInVietnam = profileLat >= 8.5 && profileLat <= 23.4 && 
+                            profileLng >= 102.1 && profileLng <= 109.5;
+        final isLikelyDefaultLocation = (profileLat == 37.4219983 && profileLng == -122.084) ||
+                                        (profileLat >= 37.0 && profileLat <= 38.0 && 
+                                         profileLng >= -123.0 && profileLng <= -122.0);
+        
+        // DEBUG: Log để kiểm tra
+        print('🔍 Profile ${profile.name}: location=($profileLat, $profileLng), province="${profile.province}", isInVietnam=$isInVietnam, isLikelyDefault=$isLikelyDefaultLocation, hasValidLocation=$profileHasValidLocation');
+        
+        // Nếu location không ở Việt Nam HOẶC là location mặc định từ emulator
+        // HOẶC không có location hợp lệ, thay thế bằng tọa độ từ province
+        if (!isInVietnam || isLikelyDefaultLocation || !profileHasValidLocation) {
+          print('   ⚠️ Profile location không hợp lệ, thử lấy tọa độ từ province: "${profile.province}"');
+          final provinceCoords = ProvinceCoordinates.getCoordinates(profile.province);
+          print('   Province coordinates result: $provinceCoords');
+          if (provinceCoords != null) {
+            final oldLat = profileLat;
+            final oldLng = profileLng;
+            profileLat = provinceCoords['lat']!;
+            profileLng = provinceCoords['lng']!;
+            profileHasValidLocation = true;
+            print('📍 Profile ${profile.name}: Thay thế location từ ($oldLat, $oldLng) -> ($profileLat, $profileLng) (từ province: ${profile.province})');
+          } else {
+            print('❌ Profile ${profile.name}: Không tìm thấy tọa độ từ province "${profile.province}"');
+          }
+        } else {
+          print('   ✅ Profile location hợp lệ và ở Việt Nam, không cần thay thế');
+        }
+      } else {
+        print('⚠️ Profile ${profile.name}: Không có province name, không thể thay thế location');
+      }
+      
+      // Tính khoảng cách nếu cả user và profile đều có location hợp lệ
+      if (hasValidUserLocation && profileHasValidLocation) {
+        // DEBUG: Log để kiểm tra
+        print('🔍 Calculating distance for ${profile.name}:');
+        print('   User: ($userLat, $userLng)');
+        print('   Profile: ($profileLat, $profileLng)');
+        
         distance = LocationService.calculateDistance(
           userLat,
           userLng,
-          profile.latitude,
-          profile.longitude,
-          silent: true, // Silent để tránh spam log
+          profileLat,
+          profileLng,
+          silent: false, // Tạm thời false để debug
         );
         
-        // Nếu distance quá lớn (có thể là lỗi data), sử dụng default
-        if (distance >= 20000) {
-          distance = 999.0;
+        print('   Distance calculated: $distance km');
+        
+        // Nếu distance quá lớn (có thể là lỗi data), sử dụng -1.0 (không hiển thị)
+        if (distance >= 20000 || distance.isInfinite || distance.isNaN) {
+          distance = -1.0;
+          print('   ⚠️ Distance không hợp lệ, set to -1.0');
+        } else if (distance == 0.0) {
+          // Nếu distance = 0, có thể là 2 điểm trùng nhau hoặc rất gần
+          print('   ⚠️ Distance = 0.0 km (có thể user và profile ở cùng vị trí)');
+        }
+      } else {
+        // Log để debug
+        if (!hasValidUserLocation) {
+          print('⚠️ User location không hợp lệ: ($userLat, $userLng) - Không thể tính distance');
+        }
+        if (!profileHasValidLocation) {
+          print('⚠️ Profile ${profile.name} không có location hợp lệ và không tìm thấy tọa độ từ province: ${profile.province}');
         }
       }
 

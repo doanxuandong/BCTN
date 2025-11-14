@@ -12,6 +12,7 @@ class AutoMessageService {
     required String receiverName,
     required UserAccountType receiverType,
     required String originalSearchCriteria,
+    String? pipelineId, // Thêm pipelineId parameter
   }) async {
     try {
       print('🚀 Starting auto message sending...');
@@ -80,6 +81,7 @@ class AutoMessageService {
         message,
         receiverType,
         originalSearchCriteria,
+        pipelineId: pipelineId, // Truyền pipelineId nếu có
       );
       print('✅ Chat created/updated');
 
@@ -146,11 +148,15 @@ Hãy kết nối để chúng ta có thể trao đổi chi tiết hơn nhé!
     String receiverId,
     String lastMessage,
     UserAccountType receiverType,
-    String originalSearchCriteria,
-  ) async {
+    String originalSearchCriteria, {
+    String? pipelineId, // Thêm pipelineId parameter
+  }) async {
     try {
       print('📋 Creating/updating chat: $chatId');
       print('📋 Participants: $senderId, $receiverId');
+      if (pipelineId != null) {
+        print('📋 Pipeline ID: $pipelineId');
+      }
       
       // Sắp xếp participants để đồng bộ với ChatService
       final participants = [senderId, receiverId];
@@ -174,6 +180,8 @@ Hãy kết nối để chúng ta có thể trao đổi chi tiết hơn nhé!
         'receiverType': receiverType.toString(),
         'searchContext': originalSearchCriteria,
         'isAutoMessage': true,
+        // Pipeline ID (nếu có)
+        if (pipelineId != null) 'pipelineId': pipelineId,
       };
 
       print('📝 Saving chat data: $chatData');

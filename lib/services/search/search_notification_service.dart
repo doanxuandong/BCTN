@@ -185,16 +185,22 @@ class SearchNotificationService {
               searchedType = UserAccountType.general;
           }
 
-          // Gửi tin nhắn tự động
+          // QUAN TRỌNG: KHÔNG tạo pipeline ngay khi chấp nhận notification
+          // Pipeline sẽ được tạo khi cả 2 bên đồng ý hợp tác trong chat
+          // Search chỉ để tìm kiếm tài khoản phù hợp, trao đổi trước, sau đó mới hợp tác
+          
+          // Gửi tin nhắn tự động (KHÔNG có pipelineId)
           final success = await AutoMessageService.sendInterestMessage(
             receiverId: senderId,
             receiverName: senderName,
             receiverType: searchedType,
             originalSearchCriteria: searchCriteria,
+            pipelineId: null, // KHÔNG tạo pipeline ngay
           );
 
           if (success) {
             print('✅ Auto message sent successfully');
+            print('✅ Chat created for collaboration discussion');
           } else {
             print('❌ Failed to send auto message');
           }

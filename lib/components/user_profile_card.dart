@@ -5,12 +5,16 @@ class UserProfileCard extends StatelessWidget {
   final UserProfile profile;
   final VoidCallback? onTap;
   final VoidCallback? onSendNotification;
+  final VoidCallback? onSendFriendRequest;
+  final bool isFriendRequestPending;
 
   const UserProfileCard({
     super.key,
     required this.profile,
     this.onTap,
     this.onSendNotification,
+    this.onSendFriendRequest,
+    this.isFriendRequestPending = false,
   });
 
   @override
@@ -116,16 +120,49 @@ class UserProfileCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  if (onSendNotification != null)
-                    IconButton(
-                      onPressed: onSendNotification,
-                      icon: const Icon(Icons.send),
-                      style: IconButton.styleFrom(
-                        backgroundColor: Colors.blue[50],
-                        foregroundColor: Colors.blue[600],
-                      ),
-                      tooltip: 'Gửi thông báo kết nối',
-                    ),
+                  // Icons actions (gửi lời mời kết bạn và gửi thông báo)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Icon gửi lời mời kết bạn
+                      if (onSendFriendRequest != null)
+                        IconButton(
+                          onPressed: isFriendRequestPending ? null : onSendFriendRequest,
+                          icon: Icon(
+                            isFriendRequestPending ? Icons.hourglass_top : Icons.person_add,
+                            size: 20,
+                          ),
+                          style: IconButton.styleFrom(
+                            backgroundColor: isFriendRequestPending 
+                                ? Colors.grey[100] 
+                                : Colors.green[50],
+                            foregroundColor: isFriendRequestPending 
+                                ? Colors.grey 
+                                : Colors.green[600],
+                            padding: const EdgeInsets.all(8),
+                            minimumSize: const Size(36, 36),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          tooltip: isFriendRequestPending 
+                              ? 'Đã gửi kết bạn' 
+                              : 'Kết bạn',
+                        ),
+                      // Icon gửi thông báo
+                      if (onSendNotification != null)
+                        IconButton(
+                          onPressed: onSendNotification,
+                          icon: const Icon(Icons.send, size: 20),
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.blue[50],
+                            foregroundColor: Colors.blue[600],
+                            padding: const EdgeInsets.all(8),
+                            minimumSize: const Size(36, 36),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          tooltip: 'Gửi thông báo kết nối',
+                        ),
+                    ],
+                  ),
                 ],
               ),
               if (profile.bio.isNotEmpty) ...[

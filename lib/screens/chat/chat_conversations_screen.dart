@@ -190,31 +190,86 @@ class _ChatConversationsScreenState extends State<ChatConversationsScreen> with 
         itemCount: _chats.length,
         itemBuilder: (context, index) {
           final chat = _chats[index];
+          // Highlight chat có pipeline (đang hợp tác)
+          final hasPipeline = chat.pipelineId != null && chat.pipelineId!.isNotEmpty;
+          
           return Card(
             margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: Colors.blue[100],
-                backgroundImage: chat.avatarUrl != null ? NetworkImage(chat.avatarUrl!) : null,
-                child: chat.avatarUrl == null 
-                    ? Text(chat.name[0].toUpperCase()) 
-                    : null,
+            // Highlight border và background cho chat có pipeline
+            color: hasPipeline ? Colors.blue[50] : null,
+            elevation: hasPipeline ? 2 : 1,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(
+                color: hasPipeline ? Colors.blue[300]! : Colors.transparent,
+                width: hasPipeline ? 2 : 0,
               ),
-              title: Text(
-                chat.name,
-                style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            child: ListTile(
+              leading: Stack(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: Colors.blue[100],
+                    backgroundImage: chat.avatarUrl != null ? NetworkImage(chat.avatarUrl!) : null,
+                    child: chat.avatarUrl == null 
+                        ? Text(chat.name[0].toUpperCase()) 
+                        : null,
+                  ),
+                  // Badge cho chat có pipeline
+                  if (hasPipeline)
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Colors.blue[700],
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                        ),
+                        child: Icon(
+                          Icons.handshake,
+                          size: 12,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              title: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      chat.name,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: hasPipeline ? Colors.blue[900] : null,
+                      ),
+                    ),
+                  ),
+                  if (chat.collaborationStatus != null && 
+                      chat.collaborationStatus != 'none')
+                    _buildCollaborationBadge(chat.collaborationStatus!),
+                ],
               ),
               subtitle: Text(
                 chat.lastMessage,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: hasPipeline ? Colors.blue[700] : null,
+                ),
               ),
               trailing: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
                     _formatTime(chat.lastMessageTime),
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: hasPipeline ? Colors.blue[700] : Colors.grey,
+                      fontWeight: hasPipeline ? FontWeight.w600 : FontWeight.normal,
+                    ),
                   ),
                   if (chat.unreadCount > 0)
                     Container(
@@ -262,6 +317,47 @@ class _ChatConversationsScreenState extends State<ChatConversationsScreen> with 
     } else {
       return 'Vừa xong';
     }
+  }
+
+  Widget _buildCollaborationBadge(String status) {
+    String label;
+    Color color;
+
+    switch (status) {
+      case 'requested':
+        label = 'Đã yêu cầu';
+        color = Colors.orange;
+        break;
+      case 'accepted':
+      case 'inProgress':
+        label = 'Đang hợp tác';
+        color = Colors.green;
+        break;
+      case 'completed':
+        label = 'Hoàn thành';
+        color = Colors.blue;
+        break;
+      default:
+        return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(left: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color, width: 1),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
   }
 }
 

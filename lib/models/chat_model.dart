@@ -21,6 +21,9 @@ class Chat {
   final UserAccountType? receiverType; // Loại tài khoản của người nhận (designer/contractor/store)
   final String? searchContext; // Tiêu chí tìm kiếm đã dùng (từ Smart Search)
   final bool isAutoMessage; // Chat được tạo từ auto message
+  final String? pipelineId; // ID của pipeline nếu chat thuộc về một dự án
+  final String? collaborationStatus; // Trạng thái hợp tác: "none", "requested", "accepted", "inProgress", "completed"
+  final String? documentId; // Firestore document ID (có thể khác với normalized id) - dùng để query messages nếu khác
 
   Chat({
     required this.id,
@@ -36,6 +39,9 @@ class Chat {
     this.receiverType,
     this.searchContext,
     this.isAutoMessage = false,
+    this.pipelineId,
+    this.collaborationStatus,
+    this.documentId,
   });
 
   Chat copyWith({
@@ -52,6 +58,9 @@ class Chat {
     UserAccountType? receiverType,
     String? searchContext,
     bool? isAutoMessage,
+    String? pipelineId,
+    String? collaborationStatus,
+    String? documentId,
   }) {
     return Chat(
       id: id ?? this.id,
@@ -67,6 +76,9 @@ class Chat {
       receiverType: receiverType ?? this.receiverType,
       searchContext: searchContext ?? this.searchContext,
       isAutoMessage: isAutoMessage ?? this.isAutoMessage,
+      pipelineId: pipelineId ?? this.pipelineId,
+      collaborationStatus: collaborationStatus ?? this.collaborationStatus,
+      documentId: documentId ?? this.documentId,
     );
   }
   
@@ -162,6 +174,11 @@ enum MessageType {
   materialCatalog,   // Catalog vật liệu (store)
   appointmentRequest, // Yêu cầu hẹn gặp
   appointmentConfirm, // Xác nhận hẹn gặp
+  // Pipeline collaboration types
+  collaborationRequest, // Yêu cầu hợp tác
+  collaborationAccept,  // Chấp nhận hợp tác
+  designHandoff,        // Gửi thiết kế cho chủ thầu
+  constructionPlanShare, // Gửi kế hoạch thi công cho cửa hàng
 }
 
 enum MessageStatus {

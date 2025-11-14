@@ -16,6 +16,7 @@ import 'material_detail_screen.dart';
 import 'import_material_screen.dart';
 import 'export_material_screen.dart';
 import 'transaction_history_screen.dart';
+import 'project_dashboard_screen.dart';
 
 class MaterialManagementScreen extends StatefulWidget {
   const MaterialManagementScreen({super.key});
@@ -99,6 +100,11 @@ class _MaterialManagementScreenState extends State<MaterialManagementScreen>
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
+          IconButton(
+            onPressed: () => _navigateToProjectDashboard(),
+            icon: const Icon(Icons.dashboard),
+            tooltip: 'Quản lý dự án',
+          ),
           IconButton(
             onPressed: () => _navigateToTransactionHistory(),
             icon: const Icon(Icons.history),
@@ -581,6 +587,15 @@ class _MaterialManagementScreenState extends State<MaterialManagementScreen>
           ),
         );
       },
+    );
+  }
+
+  void _navigateToProjectDashboard() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const ProjectDashboardScreen(),
+      ),
     );
   }
 

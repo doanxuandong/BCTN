@@ -1,7 +1,13 @@
 Đề tài là: Xây dựng ứng dụng kết nối những người trong lĩnh vực xây dựng - BuilderConnect. 
-Nhưng chưa thể hiện được tính kết nối bằng những cái riêng, mới mẻ trong ứng dụng.
-1. cần phải làm mục tìm kiếm (SearchScreen) có những cái mới lạ. Bổ sung thêm một screen cho người dùng trả lời những câu hỏi của hệ thống,
-sau đó sẽ hiển thị kết quả tương ứng với câu trả lời của người dùng.
-2. sau khi người dùng chọn gửi kết quả tin nhắn tự động gì đó, làm thêm trong box chat sao cho đặc biệt một tí, để cho nó khác với những ứng dụng chat thông thường.
-3. sửa lại logic chỗ phần chat, hiện tại có 1 tài khoản nhưng lại hiển thị tới 2 box chat
-4. công thức harversine có bị lỗi chỗ nào không, tại sao dùng thiết bị thật và cho phép kết nối vị trí rồi mà vẫn tính sai vị trí.
+* Hiện tại app của tôi bị dánh giá là chưa thể hiện được tính "connect" và nghiệp vụ để khác biệt so với những app khác*
+* Nên tôi có làm vài chức năng nhưng cũng chưa liên kết lắm *
+1. Chức năng tìm kiếm thông minh: người dùng trả lời câu hỏi sau đó ra list tài khoản theo yêu cầu người dùng
+2. Ở tính năng chat thì đối với từng loại tài khoản sẽ có các tính năng mới để hỗ trợ chuyên sâu hơn về nghiệp vụ
+* Mong muốn *
+1. flow : người dùng thường vào tìm kiếm
+* nếu tìm kiếm nhà thiết kế thì vẫn như app hiện tại đang có, nếu như trao đổi với nhà thiết kế nào mà oke, thì sẽ có tính năng hợp tác, 
+và có thêm điểm gì đặc biệt để hiển thị trong list chat là người dùng đang hợp tác với nhà thiết kế đó
+* xong sau đó nếu chốt được các mẫu thiết kế thì sẽ có tính năng gửi thiết kế đó đến cho các tài khoản chủ thầu
+* chủ thầu nào oke với thiết kế đó sẽ click quan tâm và vào trao đổi với user thường, chủ thầu sẽ có 1 nghiệp vụ gì đó để gửi kế hoạch làm công trình theo thiết kế đó,
+nếu người dùng oke thì cũng sẽ có tính năng hợp tác. 
+* xong sau đó tiếp tục dùng bản kế hoạch của nhà thầu đó, và tiến hành gửi bản kế hoạch đó đến các tài khoản là cửa hàng vật liệu, nếu cửa hàng nào chốt giá được thì sẽ có tính năng hợp tác*

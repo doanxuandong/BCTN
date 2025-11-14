@@ -498,14 +498,24 @@ class UserProfileService {
   }
 
   /// Parse UserAccountType từ string
+  /// Hỗ trợ cả "UserAccountType.designer" và "designer"
   static UserAccountType _parseAccountType(String? value) {
-    switch (value) {
-      case 'UserAccountType.designer':
+    if (value == null || value.isEmpty) {
+      return UserAccountType.general;
+    }
+    
+    // Loại bỏ "UserAccountType." nếu có
+    final normalizedValue = value.replaceAll('UserAccountType.', '').toLowerCase().trim();
+    
+    switch (normalizedValue) {
+      case 'designer':
         return UserAccountType.designer;
-      case 'UserAccountType.contractor':
+      case 'contractor':
         return UserAccountType.contractor;
-      case 'UserAccountType.store':
+      case 'store':
         return UserAccountType.store;
+      case 'general':
+        return UserAccountType.general;
       default:
         return UserAccountType.general;
     }

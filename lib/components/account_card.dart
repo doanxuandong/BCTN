@@ -167,14 +167,23 @@ class AccountCard extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.directions_walk, size: 14, color: Colors.grey),
-            const SizedBox(width: 4),
-            Text('${account.distanceKm.toStringAsFixed(1)} km', style: TextStyle(color: Colors.grey[700], fontSize: 12)),
-          ],
-        ),
+        // Chỉ hiển thị distance nếu có giá trị hợp lệ (>= 0)
+        if (account.distanceKm >= 0)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.directions_walk, size: 14, color: Colors.grey),
+              const SizedBox(width: 4),
+              Text(
+                // Luôn hiển thị km, không dùng đơn vị m
+                account.distanceKm.toStringAsFixed(1) + ' km',
+                style: TextStyle(color: Colors.grey[700], fontSize: 12),
+              ),
+            ],
+          )
+        else
+          // Không hiển thị distance nếu không có GPS
+          const SizedBox.shrink(),
         const SizedBox(height: 8),
         if (onSendFriendRequest != null)
           IconButton(

@@ -3,10 +3,9 @@ import '../../models/user_profile.dart';
 import '../../models/smart_search_question.dart';
 import '../../services/user/user_profile_service.dart';
 import '../../services/search/search_notification_service.dart';
-import '../../services/chat/auto_message_service.dart';
+import '../../services/friends/friends_service.dart';
 import '../../components/user_profile_card.dart';
 import '../../services/user/user_session.dart';
-import '../profile/public_profile_screen.dart';
 
 class SearchResultsScreen extends StatefulWidget {
   final UserAccountType? accountType;
@@ -51,6 +50,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   String? _error;
   bool _isSendingNotifications = false;
   String _sortBy = 'match'; // 'match', 'distance', 'rating' - only for smart search
+  final Map<String, bool> _friendRequestsPending = {}; // userId -> true nếu đã gửi lời mời kết bạn
 
   @override
   void initState() {
@@ -124,10 +124,16 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   }
 
   Future<void> _sendNotificationsToAll() async {
-    if (_searchResults.isEmpty) return;
+    // Xác định danh sách profiles cần gửi
+    final List<UserProfile> profilesToNotify = widget.isSmartSearch
+        ? _smartSearchResults.map((r) => r.profile).toList()
+        : _searchResults;
+
+    if (profilesToNotify.isEmpty) return;
 
     print('🔍 SearchResultsScreen._sendNotificationsToAll() called');
-    print('🔍 _searchResults.length: ${_searchResults.length}');
+    print('🔍 profilesToNotify.length: ${profilesToNotify.length}');
+    print('🔍 isSmartSearch: ${widget.isSmartSearch}');
 
     setState(() {
       _isSendingNotifications = true;
@@ -152,7 +158,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       int successCount = 0;
       
       // Gửi thông báo đến từng người dùng
-      for (final profile in _searchResults) {
+      for (final profile in profilesToNotify) {
         print('🔍 Sending notification to: ${profile.name} (${profile.id})');
         try {
           final success = await SearchNotificationService.sendSearchNotification(
@@ -175,12 +181,12 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         }
       }
 
-      print('🔍 Total notifications sent: $successCount/${_searchResults.length}');
+      print('🔍 Total notifications sent: $successCount/${profilesToNotify.length}');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Đã gửi thông báo đến $successCount/${_searchResults.length} người dùng'),
+            content: Text('Đã gửi thông báo đến $successCount/${profilesToNotify.length} người dùng'),
             backgroundColor: successCount > 0 ? Colors.green : Colors.orange,
           ),
         );
@@ -286,40 +292,6 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     return criteria.isEmpty ? 'Tìm kiếm chung' : criteria.join(', ');
   }
   
-  Future<void> _sendSmartConnection(UserProfile profile) async {
-    try {
-      // Tạo search criteria text từ answers
-      final criteriaText = _buildSearchCriteriaText();
-
-      final success = await AutoMessageService.sendInterestMessage(
-        receiverId: profile.id,
-        receiverName: profile.name,
-        receiverType: profile.accountType,
-        originalSearchCriteria: criteriaText,
-      );
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            success
-                ? 'Đã gửi tin nhắn kết nối đến ${profile.name}'
-                : 'Lỗi gửi tin nhắn',
-          ),
-          backgroundColor: success ? Colors.green : Colors.red,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Lỗi: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -372,6 +344,15 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                 ),
               ],
             ),
+          if (widget.isSmartSearch && _smartSearchResults.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: () {
+                // Trigger rebuild to re-apply current sort
+                setState(() {});
+              },
+              tooltip: 'Làm mới',
+            ),
           if (!widget.isSmartSearch && _searchResults.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.refresh),
@@ -386,7 +367,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
           Expanded(child: _buildResults()),
         ],
       ),
-      floatingActionButton: widget.isSmartSearch ? null : _buildFloatingActionButton(),
+      floatingActionButton: _buildFloatingActionButton(),
     );
   }
 
@@ -475,11 +456,20 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       }
 
       final sortedResults = _getSortedSmartResults();
+      // Dùng UserProfileCard giống Normal Search
       return ListView.builder(
         itemCount: sortedResults.length,
         itemBuilder: (context, index) {
           final result = sortedResults[index];
-          return _buildSmartSearchResultCard(result);
+          final profile = result.profile;
+          final isRequested = _friendRequestsPending[profile.id] == true;
+          return UserProfileCard(
+            profile: profile,
+            onTap: () => _showProfileDetails(profile),
+            onSendNotification: () => _sendNotificationToUser(profile),
+            onSendFriendRequest: () => _sendFriendRequest(profile),
+            isFriendRequestPending: isRequested,
+          );
         },
       );
     } else {
@@ -494,10 +484,13 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         itemCount: _searchResults.length,
         itemBuilder: (context, index) {
           final profile = _searchResults[index];
+          final isRequested = _friendRequestsPending[profile.id] == true;
           return UserProfileCard(
             profile: profile,
             onTap: () => _showProfileDetails(profile),
             onSendNotification: () => _sendNotificationToUser(profile),
+            onSendFriendRequest: () => _sendFriendRequest(profile),
+            isFriendRequestPending: isRequested,
           );
         },
       );
@@ -534,173 +527,14 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     );
   }
   
-  Widget _buildSmartSearchResultCard(SmartSearchResult result) {
-    final profile = result.profile;
-    final matchScore = result.matchScore;
-    final matchColor = _getMatchColor(matchScore);
-
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      elevation: 2,
-      child: InkWell(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => PublicProfileScreen(userId: profile.id),
-            ),
-          );
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  // Avatar
-                  CircleAvatar(
-                    radius: 30,
-                    backgroundImage: profile.displayAvatar != null
-                        ? NetworkImage(profile.displayAvatar!)
-                        : null,
-                    child: profile.displayAvatar == null
-                        ? Text(profile.initials)
-                        : null,
-                  ),
-                  const SizedBox(width: 12),
-                  // Info
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                profile.name,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            // Match score badge
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: matchColor,
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                result.matchPercentage,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          profile.typeText,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: profile.typeColor,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        if (profile.distanceKm > 0 && profile.distanceKm < 999)
-                          Text(
-                            'Khoảng cách: ${profile.distanceKm.toStringAsFixed(1)} km',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              // Specialties
-              if (profile.specialties.isNotEmpty)
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: profile.specialties.take(3).map((specialty) {
-                    return Chip(
-                      label: Text(
-                        specialty,
-                        style: const TextStyle(fontSize: 11),
-                      ),
-                      backgroundColor: Colors.blue[50],
-                      padding: EdgeInsets.zero,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    );
-                  }).toList(),
-                ),
-              const SizedBox(height: 12),
-              // Rating and Connect button
-              Row(
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.star, size: 16, color: Colors.amber[600]),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${profile.rating.toStringAsFixed(1)}',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '(${profile.reviewCount} đánh giá)',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const Spacer(),
-                  // Connect button
-                  ElevatedButton.icon(
-                    onPressed: () => _sendSmartConnection(profile),
-                    icon: const Icon(Icons.auto_awesome, size: 16),
-                    label: const Text('Kết nối'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue[600],
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-  
-  Color _getMatchColor(double score) {
-    if (score >= 80) return Colors.green[600]!;
-    if (score >= 60) return Colors.blue[600]!;
-    if (score >= 40) return Colors.orange[600]!;
-    return Colors.grey[600]!;
-  }
 
   Widget _buildFloatingActionButton() {
-    if (_searchResults.isEmpty) return const SizedBox.shrink();
+    // Xác định danh sách profiles
+    final List<UserProfile> profiles = widget.isSmartSearch
+        ? _smartSearchResults.map((r) => r.profile).toList()
+        : _searchResults;
+
+    if (profiles.isEmpty) return const SizedBox.shrink();
 
     return FloatingActionButton.extended(
       onPressed: _isSendingNotifications ? null : _sendNotificationsToAll,
@@ -924,6 +758,68 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Lỗi: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _sendFriendRequest(UserProfile profile) async {
+    try {
+      final currentUser = await UserSession.getCurrentUser();
+      if (currentUser == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Bạn cần đăng nhập!'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      final myId = currentUser['userId']?.toString();
+      final toId = profile.id;
+      
+      if (myId == null || myId == toId) return;
+
+      // Cập nhật UI ngay lập tức
+      setState(() {
+        _friendRequestsPending[toId] = true;
+      });
+
+      // Gửi lời mời kết bạn
+      final result = await FriendsService().sendFriendRequest(myId, toId);
+      
+      // Cập nhật UI với kết quả
+      setState(() {
+        _friendRequestsPending[toId] = result;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result
+                  ? 'Đã gửi lời mời kết bạn cho ${profile.name}!'
+                  : 'Đã gửi rồi hoặc có lỗi!',
+            ),
+            backgroundColor: result ? Colors.green : Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ Error in _sendFriendRequest: $e');
+      // Reset UI nếu có lỗi
+      setState(() {
+        _friendRequestsPending[profile.id] = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi gửi lời mời kết bạn: $e'),
             backgroundColor: Colors.red,
           ),
         );
