@@ -41,6 +41,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   bool _isSending = false;
   bool _isUploading = false;
   double? _uploadProgress;
+  bool _isPipelineExpanded = false; // Trạng thái collapse/expand của pipeline panel
+  bool _isQuickActionsExpanded = false; // Trạng thái collapse/expand của quick actions panel
 
   @override
   void initState() {
@@ -792,32 +794,56 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: Colors.blue[50],
-        border: Border(
-          bottom: BorderSide(color: Colors.blue[200]!),
-        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.blue[200]!),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(Icons.business_center, size: 16, color: Colors.blue[700]),
-              const SizedBox(width: 6),
-              Text(
-                'Thao tác nhanh',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.blue[700],
-                ),
+          // Header (clickable để expand/collapse)
+          InkWell(
+            onTap: () {
+              setState(() {
+                _isQuickActionsExpanded = !_isQuickActionsExpanded;
+              });
+            },
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(
+                children: [
+                  Icon(Icons.business_center, size: 18, color: Colors.blue[700]),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Thao tác nhanh',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.blue[700],
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    _isQuickActionsExpanded ? Icons.expand_less : Icons.expand_more,
+                    size: 20,
+                    color: Colors.grey[600],
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-          const SizedBox(height: 8),
-          _buildQuickActionButtons(receiverType),
+          // Nội dung (chỉ hiển thị khi expanded)
+          if (_isQuickActionsExpanded) ...[
+            Divider(height: 1, color: Colors.blue[200]),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: _buildQuickActionButtons(receiverType),
+            ),
+          ],
         ],
       ),
     );
@@ -2018,37 +2044,29 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     
     // Màu sắc dựa trên status
     Color statusColor;
-    IconData statusIcon;
     switch (currentStatus) {
       case CollaborationStatus.none:
         statusColor = Colors.grey;
-        statusIcon = Icons.circle_outlined;
         break;
       case CollaborationStatus.requested:
         statusColor = Colors.orange;
-        statusIcon = Icons.pending;
         break;
       case CollaborationStatus.accepted:
         statusColor = Colors.blue;
-        statusIcon = Icons.check_circle_outline;
         break;
       case CollaborationStatus.inProgress:
         statusColor = Colors.blue[700]!;
-        statusIcon = Icons.work_outline;
         break;
       case CollaborationStatus.completed:
         statusColor = Colors.green;
-        statusIcon = Icons.check_circle;
         break;
       case CollaborationStatus.cancelled:
         statusColor = Colors.red;
-        statusIcon = Icons.cancel;
         break;
     }
     
     return Container(
-      margin: const EdgeInsets.all(8),
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -2064,72 +2082,98 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
-          Row(
-            children: [
-              Icon(Icons.account_tree, size: 20, color: statusColor),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Pipeline dự án',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.grey[800],
+          // Header (clickable để expand/collapse)
+          InkWell(
+            onTap: () {
+              setState(() {
+                _isPipelineExpanded = !_isPipelineExpanded;
+              });
+            },
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(
+                children: [
+                  Icon(Icons.account_tree, size: 18, color: statusColor),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Pipeline dự án',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey[800],
+                      ),
+                    ),
                   ),
-                ),
+                  Icon(
+                    _isPipelineExpanded ? Icons.expand_less : Icons.expand_more,
+                    size: 20,
+                    color: Colors.grey[600],
+                  ),
+                ],
               ),
-              Icon(statusIcon, size: 20, color: statusColor),
-            ],
-          ),
-          const SizedBox(height: 12),
-          // Project name
-          Text(
-            pipeline.projectName,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey[900],
             ),
           ),
-          const SizedBox(height: 8),
-          // Stage và status
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  stageName,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: statusColor,
+          // Nội dung (chỉ hiển thị khi expanded)
+          if (_isPipelineExpanded) ...[
+            Divider(height: 1, color: Colors.grey[300]),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Project name
+                  Text(
+                    pipeline.projectName,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[900],
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  statusDescription,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[700],
+                  const SizedBox(height: 8),
+                  // Stage và status
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: statusColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          stageName,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: statusColor,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          statusDescription,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
+                  // Progress indicator
+                  const SizedBox(height: 12),
+                  _buildPipelineProgress(pipeline),
+                  // Action buttons (nếu cần)
+                  if (_shouldShowCollaborationActions(currentStatus, receiverType)) ...[
+                    const SizedBox(height: 12),
+                    _buildCollaborationActions(pipeline, currentStatus, receiverType),
+                  ],
+                ],
               ),
-            ],
-          ),
-          // Progress indicator
-          const SizedBox(height: 12),
-          _buildPipelineProgress(pipeline),
-          // Action buttons (nếu cần)
-          if (_shouldShowCollaborationActions(currentStatus, receiverType)) ...[
-            const SizedBox(height: 12),
-            _buildCollaborationActions(pipeline, currentStatus, receiverType),
+            ),
           ],
         ],
       ),
