@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../models/search_models.dart';
 import '../../constants/vn_provinces.dart';
 import '../../models/user_profile.dart';
@@ -55,6 +56,8 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
   int _unreadNotificationsCount = 0;
   bool _isLoadingRealUsers = false;
   final Map<String, bool> _friendRequestsPending = {}; // userId -> true nếu đã gửi
+  double? _cachedUserLat; // Cache user location để tránh gọi location service nhiều lần
+  double? _cachedUserLng;
 
   @override
   void initState() {
@@ -64,7 +67,207 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
     _selectedRegion = null;
     _specialtiesController = TextEditingController(text: _customSpecialties);
     _listenToNotifications();
-    _loadRealUsers(); // Load dữ liệu thật từ Firebase
+    
+    // FIX ANR: Chỉ load users, KHÔNG gọi location service ngay
+    // Location sẽ chỉ được gọi khi user thực sự cần (click search button hoặc sau khi screen ổn định)
+    _loadRealUsersWithoutLocation();
+    
+    // FIX ANR: KHÔNG gọi location service ngay trong initState
+    // Location sẽ được load sau khi UI đã render hoàn toàn (delay lâu hơn)
+    // HOẶC chỉ load khi user click "Tìm kiếm"
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Delay rất lâu (5 giây) để đảm bảo UI đã hoàn toàn render và ổn định
+      // Điều này cho phép user xem kết quả trước, location sẽ được load ở background
+      Future.delayed(const Duration(seconds: 5), () {
+        if (mounted && _realUsers.isNotEmpty && (_cachedUserLat == null || _cachedUserLng == null)) {
+          print('📍 Background: Loading location after UI is stable...');
+          _loadLocationAsync();
+        }
+      });
+    });
+  }
+  
+  /// Load users mà không cần location (để tránh ANR)
+  Future<void> _loadRealUsersWithoutLocation() async {
+    setState(() {
+      _isLoadingRealUsers = true;
+    });
+
+    try {
+      print('Loading real users from Firebase (without location)...');
+      
+      // Lấy tất cả user profiles có thể tìm kiếm (không tính distance)
+      final users = await UserProfileService.searchProfiles();
+      
+      print('Loaded ${users.length} real users from Firebase');
+      
+      setState(() {
+        _realUsers = users;
+        _isLoadingRealUsers = false;
+      });
+      
+      // Convert users to search accounts (không có distance, sẽ tính sau)
+      if (mounted) {
+        _updateResultsWithoutDistance();
+      }
+    } catch (e) {
+      print('Error loading real users: $e');
+      setState(() {
+        _isLoadingRealUsers = false;
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi tải dữ liệu: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+  
+  /// Update results mà không tính distance (để tránh ANR)
+  /// Hiển thị users ngay, distance sẽ được tính sau khi có location
+  void _updateResultsWithoutDistance() {
+    if (_realUsers.isEmpty) {
+      setState(() {
+        _results = [];
+      });
+      return;
+    }
+    
+    // Filter users theo type
+    final filteredUsers = _realUsers.where((user) {
+      switch (_selectedType) {
+        case AccountType.designer:
+          return user.accountType == UserAccountType.designer;
+        case AccountType.contractor:
+          return user.accountType == UserAccountType.contractor;
+        case AccountType.store:
+          return user.accountType == UserAccountType.store;
+      }
+    }).toList();
+    
+    // Convert to SearchAccount (không tính distance, set -1.0)
+    final results = filteredUsers.map((user) {
+      // Map UserAccountType sang AccountType
+      AccountType accountType;
+      switch (user.accountType) {
+        case UserAccountType.designer:
+          accountType = AccountType.designer;
+          break;
+        case UserAccountType.contractor:
+          accountType = AccountType.contractor;
+          break;
+        case UserAccountType.store:
+          accountType = AccountType.store;
+          break;
+        case UserAccountType.general:
+          // Bỏ qua tài khoản general
+          return null;
+      }
+
+      // Map province
+      Province province = user.province.isNotEmpty
+          ? Province(code: user.province, name: user.province, region: Region.central)
+          : Province(code: 'TP. Hồ Chí Minh', name: 'TP. Hồ Chí Minh', region: Region.south);
+
+      // Map specialties
+      List<Specialty> specialties = user.specialties.map((s) {
+        return SearchData.specialties.firstWhere(
+          (sp) => sp.name.toLowerCase().contains(s.toLowerCase()) || s.toLowerCase().contains(sp.name.toLowerCase()),
+          orElse: () => SearchData.specialties.first,
+        );
+      }).toList();
+
+      // Tính khoảng cách: -1.0 = chưa có, sẽ tính sau
+      double distance = -1.0;
+
+      return SearchAccount(
+        id: user.id,
+        name: user.name,
+        type: accountType,
+        address: user.address.isNotEmpty ? user.address : user.location,
+        province: province,
+        specialties: specialties.isNotEmpty ? specialties : [SearchData.specialties.first],
+        rating: user.rating,
+        reviewCount: user.reviewCount,
+        distanceKm: distance, // Chưa có distance, sẽ tính sau
+        avatarUrl: user.displayAvatar,
+        additionalInfo: user.additionalInfo,
+      );
+    }).where((account) => account != null).cast<SearchAccount>().toList();
+    
+    setState(() {
+      _results = results;
+    });
+    
+    print('✅ Updated results without distance: ${results.length} accounts');
+  }
+  
+  /// Load location async (không block main thread)
+  /// FIX ANR: Chỉ dùng cached location, KHÔNG request GPS mới
+  Future<void> _loadLocationAsync() async {
+    try {
+      print('📍 Loading user location (async, non-blocking, cached only)...');
+      
+      // FIX ANR: CHỈ dùng cached location (getLastKnownPosition - không block)
+      // KHÔNG gọi getCurrentLocation để tránh block main thread
+      try {
+        final lastKnown = await Geolocator.getLastKnownPosition().timeout(
+          const Duration(seconds: 2), // Timeout ngắn để không block
+          onTimeout: () {
+            print('⏱️ getLastKnownPosition timeout');
+            return null;
+          },
+        );
+        
+        if (lastKnown != null && LocationService.isValidLocation(
+            lastKnown.latitude, lastKnown.longitude)) {
+          print('✅ Using cached location: (${lastKnown.latitude}, ${lastKnown.longitude})');
+          // Apply filters với cached location
+          await _applyFiltersWithLocation(
+            lastKnown.latitude, 
+            lastKnown.longitude,
+          );
+          return;
+        }
+      } catch (e) {
+        print('⚠️ Error getting cached location: $e');
+      }
+      
+      // FIX ANR: Nếu không có cached, dùng default location ngay (KHÔNG request GPS mới)
+      print('⚠️ No cached location, using default location (TP.HCM)');
+      await _applyFiltersWithLocation(10.8231, 106.6297);
+    } catch (e) {
+      print('❌ Error loading location: $e');
+      // Dùng default location nếu có lỗi
+      await _applyFiltersWithLocation(10.8231, 106.6297);
+    }
+  }
+  
+  /// Apply filters với location cụ thể
+  Future<void> _applyFiltersWithLocation(double userLat, double userLng) async {
+    if (!mounted) return;
+    
+    // Cache location để dùng cho các lần filter sau (tránh gọi location service)
+    _cachedUserLat = userLat;
+    _cachedUserLng = userLng;
+    
+    // Convert users với location
+    final results = _convertUserProfilesToSearchAccounts(
+      _realUsers, 
+      userLat, 
+      userLng,
+    );
+    
+    if (mounted) {
+      setState(() {
+        _results = results;
+        _isLoadingRealUsers = false;
+      });
+    }
   }
   
   void _initializeTabController() {
@@ -130,54 +333,54 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
         actions: [
           // Chỉ hiển thị actions ở tab 0 (tìm kiếm thông thường)
           if (_currentTabIndex == 0) ...[
-            Stack(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.notifications),
-                  onPressed: _openNotifications,
-                  tooltip: 'Thông báo tìm kiếm',
-                ),
-                if (_unreadNotificationsCount > 0)
-                  Positioned(
-                    right: 8,
-                    top: 8,
-                    child: Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        color: Colors.red,
-                        borderRadius: BorderRadius.circular(10),
+          Stack(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications),
+                onPressed: _openNotifications,
+                tooltip: 'Thông báo tìm kiếm',
+              ),
+              if (_unreadNotificationsCount > 0)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 16,
+                      minHeight: 16,
+                    ),
+                    child: Text(
+                      '$_unreadNotificationsCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
                       ),
-                      constraints: const BoxConstraints(
-                        minWidth: 16,
-                        minHeight: 16,
-                      ),
-                      child: Text(
-                        '$_unreadNotificationsCount',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
+                      textAlign: TextAlign.center,
                     ),
                   ),
-              ],
-            ),
-            IconButton(
-              icon: Icon(_showFilters ? Icons.filter_list_off : Icons.filter_list),
-              onPressed: () {
-                setState(() {
-                  _showFilters = !_showFilters;
-                });
-              },
-              tooltip: _showFilters ? 'Ẩn bộ lọc' : 'Hiện bộ lọc',
-            ),
-            IconButton(
-              onPressed: _resetFilters,
-              icon: const Icon(Icons.refresh),
-              tooltip: 'Đặt lại',
-            ),
+                ),
+            ],
+          ),
+          IconButton(
+            icon: Icon(_showFilters ? Icons.filter_list_off : Icons.filter_list),
+            onPressed: () {
+              setState(() {
+                _showFilters = !_showFilters;
+              });
+            },
+            tooltip: _showFilters ? 'Ẩn bộ lọc' : 'Hiện bộ lọc',
+          ),
+          IconButton(
+            onPressed: _resetFilters,
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Đặt lại',
+          ),
           ],
         ],
       ),
@@ -196,24 +399,24 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
   /// Tab 1: Tìm kiếm thông thường (SearchScreen hiện tại)
   Widget _buildNormalSearch() {
     return RefreshIndicator(
-      onRefresh: () async {
-        await _loadRealUsers();
-      },
-      child: Column(
-        children: [
-          _buildTypeSelector(),
-          if (_showFilters) ...[
-            Flexible(
-              child: SingleChildScrollView(
-                child: _buildFilters(),
+        onRefresh: () async {
+          await _loadRealUsers();
+        },
+        child: Column(
+          children: [
+            _buildTypeSelector(),
+            if (_showFilters) ...[
+              Flexible(
+                child: SingleChildScrollView(
+                  child: _buildFilters(),
+                ),
               ),
-            ),
+            ],
+            _buildKeywordBar(),
+            const SizedBox(height: 8),
+            _buildResultHeader(),
+            Expanded(child: _buildResults()),
           ],
-          _buildKeywordBar(),
-          const SizedBox(height: 8),
-          _buildResultHeader(),
-          Expanded(child: _buildResults()),
-        ],
       ),
     );
   }
@@ -868,41 +1071,21 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
     }
 
     try {
-      // Lấy vị trí GPS hiện tại để tính khoảng cách chính xác
-      // TỐI ƯU: Dùng getCurrentLocationQuick để nhanh hơn
-      final position = await LocationService.getCurrentLocationQuick();
-      double userLat = 10.8231; // Default: TP.HCM
-      double userLng = 106.6297;
-
-      if (position != null && LocationService.isValidLocation(position.latitude, position.longitude)) {
-        final gpsLat = position.latitude;
-        final gpsLng = position.longitude;
-        
-        // QUAN TRỌNG: Kiểm tra xem GPS location có phải là location mặc định từ emulator không
-        // Location mặc định từ emulator: 37.4219983, -122.084 (California, Mỹ)
-        // Hoặc location ngoài Việt Nam (latitude < 8 hoặc > 23, longitude < 102 hoặc > 110)
-        final isInVietnam = gpsLat >= 8.5 && gpsLat <= 23.4 && 
-                            gpsLng >= 102.1 && gpsLng <= 109.5;
-        final isLikelyDefaultLocation = (gpsLat == 37.4219983 && gpsLng == -122.084) ||
-                                        (gpsLat >= 37.0 && gpsLat <= 38.0 && 
-                                         gpsLng >= -123.0 && gpsLng <= -122.0);
-        
-        if (!isInVietnam || isLikelyDefaultLocation) {
-          // GPS location không ở Việt Nam hoặc là location mặc định từ emulator
-          // Sử dụng default location (TP.HCM) thay vì GPS location
-          print('⚠️ _applyFilters: GPS location không hợp lệ hoặc ngoài Việt Nam: ($gpsLat, $gpsLng)');
-          print('   Dùng default location (TP.HCM): $userLat, $userLng');
-        } else {
-          // GPS location hợp lệ và ở Việt Nam
-          userLat = gpsLat;
-          userLng = gpsLng;
-          print('✅ _applyFilters: Got user location from GPS: $userLat, $userLng');
-        }
-      } else {
-        print('⚠️ _applyFilters: GPS location không hợp lệ, dùng default location (TP.HCM): $userLat, $userLng');
-        if (position != null) {
-          print('   GPS returned: (${position.latitude}, ${position.longitude})');
-        }
+      // FIX ANR: KHÔNG gọi location service trong _applyFilters()
+      // Dùng location đã cache hoặc default location
+      double userLat;
+      double userLng;
+      
+      if (_cachedUserLat != null && _cachedUserLng != null) {
+        // Dùng location đã cache (từ _loadLocationAsync)
+        userLat = _cachedUserLat!;
+        userLng = _cachedUserLng!;
+        print('✅ _applyFilters: Dùng cached location: ($userLat, $userLng)');
+    } else {
+        // Chưa có cached location, dùng default (TP.HCM)
+        userLat = 10.8231;
+        userLng = 106.6297;
+        print('⚠️ _applyFilters: Chưa có cached location, dùng default (TP.HCM)');
       }
 
       // TỐI ƯU: Chuyển việc convert sang isolate/compute để không block UI thread
@@ -978,8 +1161,8 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
       ).toList();
     }
 
-      setState(() {
-        _results = data;
+    setState(() {
+      _results = data;
         _isLoadingRealUsers = false;
       });
       
@@ -1217,45 +1400,9 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
 
   /// Load dữ liệu thật từ Firebase
   Future<void> _loadRealUsers() async {
-    setState(() {
-      _isLoadingRealUsers = true;
-    });
-
-    try {
-      print('Loading real users from Firebase...');
-      
-      // Lấy tất cả user profiles có thể tìm kiếm
-      final users = await UserProfileService.searchProfiles();
-      
-      print('Loaded ${users.length} real users from Firebase');
-      for (var user in users) {
-        print('- ${user.name} (${user.accountType}) - ${user.province}');
-      }
-      
-      setState(() {
-        _realUsers = users;
-        _isLoadingRealUsers = false;
-      });
-
-      // Apply filters với dữ liệu mới
-      await _applyFilters();
-      
-      // No success snackbar to keep UI clean
-    } catch (e) {
-      print('Error loading real users: $e');
-      setState(() {
-        _isLoadingRealUsers = false;
-      });
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Lỗi tải dữ liệu: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
+    // FIX ANR: Không gọi _applyFilters() ngay (sẽ gọi sau khi có location)
+    // Redirect to _loadRealUsersWithoutLocation
+    await _loadRealUsersWithoutLocation();
   }
 
   /// Debug search notifications
