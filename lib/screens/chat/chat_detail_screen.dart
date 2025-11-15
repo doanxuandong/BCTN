@@ -1888,24 +1888,117 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     DateTime? expectedStartDate;
     DateTime? expectedEndDate;
 
+    // Load user projects (chỉ projects mà user là owner)
+    List<ProjectPipeline> userProjects = [];
+    String? selectedProjectId;
+    bool isLoadingProjects = true;
+    
+    try {
+      userProjects = await PipelineService.getUserPipelines();
+      final currentUser = await UserSession.getCurrentUser();
+      if (currentUser != null) {
+        final userId = currentUser['userId']?.toString();
+        if (userId != null) {
+          userProjects = userProjects.where((p) => p.ownerId == userId).toList();
+        }
+      }
+    } catch (e) {
+      print('❌ Error loading user projects: $e');
+    }
+    isLoadingProjects = false;
+
     await showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Timeline dự án'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: projectNameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Tên dự án',
-                    hintText: 'VD: Xây dựng nhà phố 2 tầng...',
-                    border: OutlineInputBorder(),
+        builder: (context, setDialogState) {
+          // Helper function để tự động điền thông tin từ dự án đã chọn
+          void _fillProjectInfo(ProjectPipeline? project) {
+            if (project == null) {
+              // Nếu chọn "Tạo mới", xóa các field
+              projectNameController.clear();
+              setDialogState(() {
+                expectedStartDate = null;
+                expectedEndDate = null;
+              });
+              return;
+            }
+            
+            // Điền tên dự án
+            projectNameController.text = project.projectName;
+            
+            // Điền ngày bắt đầu và kết thúc
+            setDialogState(() {
+              expectedStartDate = project.startDate;
+              expectedEndDate = project.endDate;
+            });
+          }
+          
+          return AlertDialog(
+            title: const Text('Timeline dự án'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Dropdown chọn dự án
+                  if (isLoadingProjects)
+                    const Center(child: Padding(
+                      padding: EdgeInsets.all(16.0),
+                      child: CircularProgressIndicator(),
+                    ))
+                  else if (userProjects.isNotEmpty) ...[
+                    DropdownButtonFormField<String?>(
+                      value: selectedProjectId,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Chọn dự án (tùy chọn)',
+                        hintText: 'Tạo mới',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.folder_special),
+                        helperText: 'Chọn dự án để tự động điền thông tin',
+                      ),
+                      items: [
+                        const DropdownMenuItem(
+                          value: null,
+                          child: Text('Tạo mới (không chọn dự án)'),
+                        ),
+                        ...userProjects.map((project) {
+                          return DropdownMenuItem(
+                            value: project.id,
+                            child: Text(
+                              project.projectName,
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                          );
+                        }),
+                      ],
+                      onChanged: (v) {
+                        setDialogState(() {
+                          selectedProjectId = v;
+                          // Tự động điền thông tin từ dự án đã chọn
+                          if (v != null) {
+                            final selectedProject = userProjects.firstWhere(
+                              (p) => p.id == v,
+                              orElse: () => userProjects.first,
+                            );
+                            _fillProjectInfo(selectedProject);
+                          } else {
+                            _fillProjectInfo(null);
+                          }
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  TextField(
+                    controller: projectNameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Tên dự án',
+                      hintText: 'VD: Xây dựng nhà phố 2 tầng...',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
-                ),
                 const SizedBox(height: 12),
                 InkWell(
                   onTap: () async {
@@ -2118,7 +2211,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               child: const Text('Chia sẻ'),
             ),
           ],
-        ),
+        );
+        },
       ),
     );
   }
