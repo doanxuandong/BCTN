@@ -6,12 +6,19 @@ class PipelineService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static const String _collection = 'project_pipelines';
 
-  /// Tạo pipeline mới từ tìm kiếm nhà thiết kế
-  static Future<String?> createPipelineFromDesignerSearch({
-    required String designerId,
-    required String designerName,
-    required Map<String, dynamic> searchMetadata,
-    String? projectName,
+  /// Tạo dự án mới (chưa có đối tác) - Phase 1
+  static Future<String?> createEmptyProject({
+    required String projectName,
+    String? description,
+    double? budget,
+    String? location,
+    DateTime? startDate,
+    DateTime? endDate,
+    ProjectStatus status = ProjectStatus.planning,
+    ProjectType? projectType,
+    double? designBudget,
+    double? constructionBudget,
+    double? materialsBudget,
   }) async {
     try {
       final currentUser = await UserSession.getCurrentUser();
@@ -20,6 +27,85 @@ class PipelineService {
       final ownerId = currentUser['userId']?.toString();
       if (ownerId == null) return null;
 
+      final pipeline = ProjectPipeline(
+        id: '', // Will be set by Firestore
+        projectName: projectName,
+        ownerId: ownerId,
+        createdAt: DateTime.now(),
+        description: description,
+        budget: budget,
+        location: location,
+        startDate: startDate,
+        endDate: endDate,
+        status: status,
+        projectType: projectType,
+        designBudget: designBudget,
+        constructionBudget: constructionBudget,
+        materialsBudget: materialsBudget,
+        // Chưa có đối tác nào
+        designStatus: CollaborationStatus.none,
+        constructionStatus: CollaborationStatus.none,
+        materialsStatus: CollaborationStatus.none,
+        currentStage: PipelineStage.design,
+      );
+
+      final docRef = await _firestore.collection(_collection).add(pipeline.toFirestore());
+      print('✅ Created empty project: $projectName (ID: ${docRef.id})');
+      return docRef.id;
+    } catch (e) {
+      print('❌ Error creating empty project: $e');
+      return null;
+    }
+  }
+
+  /// Tạo pipeline mới từ tìm kiếm nhà thiết kế
+  /// Nếu có projectId, sẽ cập nhật project đó với designer
+  /// Nếu không, sẽ tạo pipeline mới
+  static Future<String?> createPipelineFromDesignerSearch({
+    required String designerId,
+    required String designerName,
+    required Map<String, dynamic> searchMetadata,
+    String? projectName,
+    String? projectId, // Phase 1: Link với dự án có sẵn
+  }) async {
+    try {
+      final currentUser = await UserSession.getCurrentUser();
+      if (currentUser == null) return null;
+
+      final ownerId = currentUser['userId']?.toString();
+      if (ownerId == null) return null;
+
+      // Phase 1: Nếu có projectId, cập nhật project đó với designer
+      if (projectId != null && projectId.isNotEmpty) {
+        try {
+          final projectDoc = await _firestore.collection(_collection).doc(projectId).get();
+          if (projectDoc.exists) {
+            final projectData = projectDoc.data()!;
+            // Kiểm tra xem user có phải là owner của project này không
+            if (projectData['ownerId'] == ownerId) {
+              // Cập nhật project với designer
+              await _firestore.collection(_collection).doc(projectId).update({
+                'designerId': designerId,
+                'designerName': designerName,
+                'designStatus': CollaborationStatus.requested.toString().split('.').last,
+                'currentStage': PipelineStage.design.toString().split('.').last,
+                'updatedAt': DateTime.now().millisecondsSinceEpoch,
+                // Giữ nguyên các thông tin khác của project (description, budget, etc.)
+              });
+              print('✅ Updated existing project $projectId with Designer: $designerName');
+              return projectId;
+            } else {
+              print('⚠️ User is not owner of project $projectId, creating new pipeline');
+            }
+          } else {
+            print('⚠️ Project $projectId not found, creating new pipeline');
+          }
+        } catch (e) {
+          print('⚠️ Error updating project $projectId: $e, creating new pipeline');
+        }
+      }
+
+      // Tạo pipeline mới (nếu không có projectId hoặc không thể cập nhật)
       final pipeline = ProjectPipeline(
         id: '', // Will be set by Firestore
         projectName: projectName ?? 'Dự án mới',
@@ -41,6 +127,7 @@ class PipelineService {
   }
 
   /// Tạo pipeline mới từ tìm kiếm chủ thầu (Contractor)
+  /// Nếu có projectId, sẽ cập nhật project đó với contractor
   /// Nếu đã có pipeline với Designer, sẽ cập nhật pipeline đó
   /// Nếu chưa có, sẽ tạo pipeline mới
   static Future<String?> createPipelineFromContractorSearch({
@@ -48,6 +135,7 @@ class PipelineService {
     required String contractorName,
     required Map<String, dynamic> searchMetadata,
     String? projectName,
+    String? projectId, // Phase 1: Link với dự án có sẵn
   }) async {
     try {
       final currentUser = await UserSession.getCurrentUser();
@@ -55,6 +143,36 @@ class PipelineService {
 
       final ownerId = currentUser['userId']?.toString();
       if (ownerId == null) return null;
+
+      // Phase 1: Nếu có projectId, cập nhật project đó với contractor
+      if (projectId != null && projectId.isNotEmpty) {
+        try {
+          final projectDoc = await _firestore.collection(_collection).doc(projectId).get();
+          if (projectDoc.exists) {
+            final projectData = projectDoc.data()!;
+            // Kiểm tra xem user có phải là owner của project này không
+            if (projectData['ownerId'] == ownerId) {
+              // Cập nhật project với contractor
+              await _firestore.collection(_collection).doc(projectId).update({
+                'contractorId': contractorId,
+                'contractorName': contractorName,
+                'constructionStatus': CollaborationStatus.requested.toString().split('.').last,
+                'currentStage': PipelineStage.construction.toString().split('.').last,
+                'updatedAt': DateTime.now().millisecondsSinceEpoch,
+                // Giữ nguyên các thông tin khác của project
+              });
+              print('✅ Updated existing project $projectId with Contractor: $contractorName');
+              return projectId;
+            } else {
+              print('⚠️ User is not owner of project $projectId, checking for existing pipeline');
+            }
+          } else {
+            print('⚠️ Project $projectId not found, checking for existing pipeline');
+          }
+        } catch (e) {
+          print('⚠️ Error updating project $projectId: $e, checking for existing pipeline');
+        }
+      }
 
       // Tìm pipeline hiện tại có Designer (chưa có Contractor)
       // Firestore không hỗ trợ isNotNull, nên query tất cả rồi filter ở client-side
@@ -112,6 +230,7 @@ class PipelineService {
   }
 
   /// Tạo pipeline mới từ tìm kiếm cửa hàng vật liệu (Store)
+  /// Nếu có projectId, sẽ cập nhật project đó với store
   /// Nếu đã có pipeline với Designer/Contractor, sẽ cập nhật pipeline đó
   /// Nếu chưa có, sẽ tạo pipeline mới
   static Future<String?> createPipelineFromStoreSearch({
@@ -119,6 +238,7 @@ class PipelineService {
     required String storeName,
     required Map<String, dynamic> searchMetadata,
     String? projectName,
+    String? projectId, // Phase 1: Link với dự án có sẵn
   }) async {
     try {
       final currentUser = await UserSession.getCurrentUser();
@@ -127,50 +247,80 @@ class PipelineService {
       final ownerId = currentUser['userId']?.toString();
       if (ownerId == null) return null;
 
+      // Phase 1: Nếu có projectId, cập nhật project đó với store
+      if (projectId != null && projectId.isNotEmpty) {
+        try {
+          final projectDoc = await _firestore.collection(_collection).doc(projectId).get();
+          if (projectDoc.exists) {
+            final projectData = projectDoc.data()!;
+            // Kiểm tra xem user có phải là owner của project này không
+            if (projectData['ownerId'] == ownerId) {
+              // Cập nhật project với store
+              await _firestore.collection(_collection).doc(projectId).update({
+                'storeId': storeId,
+                'storeName': storeName,
+                'materialsStatus': CollaborationStatus.requested.toString().split('.').last,
+                'currentStage': PipelineStage.materials.toString().split('.').last,
+                'updatedAt': DateTime.now().millisecondsSinceEpoch,
+                // Giữ nguyên các thông tin khác của project
+              });
+              print('✅ Updated existing project $projectId with Store: $storeName');
+              return projectId;
+            } else {
+              print('⚠️ User is not owner of project $projectId, checking for existing pipeline');
+            }
+          } else {
+            print('⚠️ Project $projectId not found, checking for existing pipeline');
+          }
+        } catch (e) {
+          print('⚠️ Error updating project $projectId: $e, checking for existing pipeline');
+        }
+      }
+
       // Tìm pipeline hiện tại có Designer hoặc Contractor (chưa có Store)
-      // Ưu tiên pipeline đang ở giai đoạn construction hoặc materials
       final existingPipelineSnapshot = await _firestore
           .collection(_collection)
           .where('ownerId', isEqualTo: ownerId)
-          .where('storeId', isNull: true)
-          .limit(1)
           .get();
 
-      if (existingPipelineSnapshot.docs.isNotEmpty) {
-        // Cập nhật pipeline hiện tại với Store
-        final existingDoc = existingPipelineSnapshot.docs.first;
-        final existingPipelineId = existingDoc.id;
-        
-        print('✅ Found existing pipeline, updating with Store: $existingPipelineId');
-        
-        await _firestore.collection(_collection).doc(existingPipelineId).update({
-          'storeId': storeId,
-          'storeName': storeName,
-          'materialsStatus': CollaborationStatus.requested.toString().split('.').last,
-          'currentStage': PipelineStage.materials.toString().split('.').last,
-          'updatedAt': DateTime.now().millisecondsSinceEpoch,
-        });
-        
-        return existingPipelineId;
-      } else {
-        // Tạo pipeline mới với Store
-        print('✅ No existing pipeline found, creating new pipeline with Store');
-        
-        final pipeline = ProjectPipeline(
-          id: '', // Will be set by Firestore
-          projectName: projectName ?? 'Dự án mới',
-          ownerId: ownerId,
-          createdAt: DateTime.now(),
-          storeId: storeId,
-          storeName: storeName,
-          materialsStatus: CollaborationStatus.requested,
-          searchMetadata: searchMetadata,
-          currentStage: PipelineStage.materials,
-        );
-
-        final docRef = await _firestore.collection(_collection).add(pipeline.toFirestore());
-        return docRef.id;
+      // Filter: Tìm pipeline có Designer/Contractor nhưng chưa có Store
+      for (var doc in existingPipelineSnapshot.docs) {
+        final data = doc.data();
+        if ((data['designerId'] != null || data['contractorId'] != null) &&
+            (data['storeId'] == null || data['storeId'] == '')) {
+          final existingPipelineId = doc.id;
+          
+          print('✅ Found existing pipeline, updating with Store: $existingPipelineId');
+          
+          await _firestore.collection(_collection).doc(existingPipelineId).update({
+            'storeId': storeId,
+            'storeName': storeName,
+            'materialsStatus': CollaborationStatus.requested.toString().split('.').last,
+            'currentStage': PipelineStage.materials.toString().split('.').last,
+            'updatedAt': DateTime.now().millisecondsSinceEpoch,
+          });
+          
+          return existingPipelineId;
+        }
       }
+      
+      // Tạo pipeline mới với Store
+      print('✅ No existing pipeline found, creating new pipeline with Store');
+      
+      final pipeline = ProjectPipeline(
+        id: '', // Will be set by Firestore
+        projectName: projectName ?? 'Dự án mới',
+        ownerId: ownerId,
+        createdAt: DateTime.now(),
+        storeId: storeId,
+        storeName: storeName,
+        materialsStatus: CollaborationStatus.requested,
+        searchMetadata: searchMetadata,
+        currentStage: PipelineStage.materials,
+      );
+
+      final docRef = await _firestore.collection(_collection).add(pipeline.toFirestore());
+      return docRef.id;
     } catch (e) {
       print('❌ Error creating store pipeline: $e');
       return null;
@@ -397,16 +547,23 @@ class PipelineService {
   /// Hoàn thành thiết kế và chuyển sang giai đoạn thi công
   static Future<bool> completeDesign({
     required String pipelineId,
-    required String designFileUrl,
+    String? designFileUrl, // Optional: có thể đánh dấu hoàn thành mà không cần file
   }) async {
     try {
-      await _firestore.collection(_collection).doc(pipelineId).update({
+      final updateData = <String, dynamic>{
         'designStatus': CollaborationStatus.completed.toString().split('.').last,
-        'designFileUrl': designFileUrl,
         'designCompletedAt': DateTime.now().millisecondsSinceEpoch,
         'currentStage': PipelineStage.construction.toString().split('.').last,
         'updatedAt': DateTime.now().millisecondsSinceEpoch,
-      });
+      };
+      
+      // Chỉ cập nhật fileUrl nếu được cung cấp
+      if (designFileUrl != null && designFileUrl.isNotEmpty) {
+        updateData['designFileUrl'] = designFileUrl;
+      }
+      
+      await _firestore.collection(_collection).doc(pipelineId).update(updateData);
+      print('✅ Design stage completed for pipeline: $pipelineId');
       return true;
     } catch (e) {
       print('❌ Error completing design: $e');
@@ -489,14 +646,23 @@ class PipelineService {
   /// Hoàn thành thi công và chuyển sang giai đoạn vật liệu
   static Future<bool> completeConstruction({
     required String pipelineId,
+    String? constructionPlanUrl, // Optional: có thể đánh dấu hoàn thành mà không cần file
   }) async {
     try {
-      await _firestore.collection(_collection).doc(pipelineId).update({
+      final updateData = <String, dynamic>{
         'constructionStatus': CollaborationStatus.completed.toString().split('.').last,
         'constructionCompletedAt': DateTime.now().millisecondsSinceEpoch,
         'currentStage': PipelineStage.materials.toString().split('.').last,
         'updatedAt': DateTime.now().millisecondsSinceEpoch,
-      });
+      };
+      
+      // Chỉ cập nhật planUrl nếu được cung cấp
+      if (constructionPlanUrl != null && constructionPlanUrl.isNotEmpty) {
+        updateData['constructionPlanUrl'] = constructionPlanUrl;
+      }
+      
+      await _firestore.collection(_collection).doc(pipelineId).update(updateData);
+      print('✅ Construction stage completed for pipeline: $pipelineId');
       return true;
     } catch (e) {
       print('❌ Error completing construction: $e');
@@ -561,15 +727,22 @@ class PipelineService {
   /// Hoàn thành mua vật liệu
   static Future<bool> completeMaterials({
     required String pipelineId,
-    required String quoteUrl,
+    String? quoteUrl, // Optional: có thể đánh dấu hoàn thành mà không cần file
   }) async {
     try {
-      await _firestore.collection(_collection).doc(pipelineId).update({
+      final updateData = <String, dynamic>{
         'materialsStatus': CollaborationStatus.completed.toString().split('.').last,
-        'materialQuoteUrl': quoteUrl,
         'materialsCompletedAt': DateTime.now().millisecondsSinceEpoch,
         'updatedAt': DateTime.now().millisecondsSinceEpoch,
-      });
+      };
+      
+      // Chỉ cập nhật quoteUrl nếu được cung cấp
+      if (quoteUrl != null && quoteUrl.isNotEmpty) {
+        updateData['materialQuoteUrl'] = quoteUrl;
+      }
+      
+      await _firestore.collection(_collection).doc(pipelineId).update(updateData);
+      print('✅ Materials stage completed for pipeline: $pipelineId');
       return true;
     } catch (e) {
       print('❌ Error completing materials: $e');

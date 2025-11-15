@@ -1,14 +1,17 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../models/user_profile.dart';
+import '../../models/completed_project.dart';
 import '../../components/profile_header.dart';
 import '../../components/profile_stats.dart';
 import '../../components/profile_menu.dart';
 import '../../components/image_source_dialog.dart';
+import '../../components/completed_project_card.dart';
 import '../friends/friends_screen.dart';
 import 'edit_profile_screen.dart';
 import '../../services/user/user_session.dart';
 import '../../services/profile/profile_service.dart';
+import '../../services/project/completed_project_service.dart';
 import '../../services/friends/friends_service.dart';
 import '../../services/storage/image_service.dart';
 import '../../services/social/post_service.dart';
@@ -613,9 +616,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _showSnackBar('Hiển thị ${_currentUser!.stats.following} người đang theo dõi');
   }
 
-  void _showProjects() {
+  void _showProjects() async {
     if (_currentUser == null) return;
-    _showSnackBar('Hiển thị ${_currentUser!.stats.projects} dự án');
+    
+    // Chỉ hiển thị completed projects cho Designer, Contractor, Store
+    if (_currentUser!.accountType != UserAccountType.designer &&
+        _currentUser!.accountType != UserAccountType.contractor &&
+        _currentUser!.accountType != UserAccountType.store) {
+      _showSnackBar('Chức năng này chỉ dành cho Nhà thiết kế, Chủ thầu hoặc Cửa hàng VLXD');
+      return;
+    }
+    
+    // Navigate đến screen hiển thị completed projects
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => _CompletedProjectsScreen(
+          userId: _currentUser!.id,
+          userName: _currentUser!.displayName,
+        ),
+      ),
+    );
   }
 
   void _showMaterials() {
@@ -697,6 +718,107 @@ class _UserPostsScreenState extends State<_UserPostsScreen> {
                   itemCount: _posts.length,
                   itemBuilder: (context, index) => PostCard(post: _posts[index]),
       ),
+    );
+  }
+}
+
+/// Screen hiển thị danh sách dự án đã hoàn thành
+class _CompletedProjectsScreen extends StatefulWidget {
+  final String userId;
+  final String userName;
+  
+  const _CompletedProjectsScreen({
+    required this.userId,
+    required this.userName,
+  });
+
+  @override
+  State<_CompletedProjectsScreen> createState() => _CompletedProjectsScreenState();
+}
+
+class _CompletedProjectsScreenState extends State<_CompletedProjectsScreen> {
+  bool _loading = true;
+  List<CompletedProject> _completedProjects = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+    });
+
+    try {
+      final projects = await CompletedProjectService.getUserCompletedProjects(widget.userId);
+      if (!mounted) return;
+      setState(() {
+        _completedProjects = projects;
+        _loading = false;
+      });
+    } catch (e) {
+      print('❌ Error loading completed projects: $e');
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Dự án đã hoàn thành'),
+        backgroundColor: Colors.blue[700],
+        foregroundColor: Colors.white,
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _completedProjects.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.work_outline,
+                        size: 64,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Chưa có dự án nào được hoàn thành',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Các dự án đã hoàn thành sẽ xuất hiện tại đây',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[500],
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _completedProjects.length,
+                    itemBuilder: (context, index) => CompletedProjectCard(
+                      project: _completedProjects[index],
+                      onTap: () {
+                        // TODO: Có thể navigate đến chi tiết dự án
+                      },
+                    ),
+                  ),
+                ),
     );
   }
 }

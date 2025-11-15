@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import '../../models/project_pipeline.dart';
 import '../../services/project/pipeline_service.dart';
+import '../../services/project/completed_project_service.dart';
 import '../../services/user/user_session.dart';
 import '../chat/chat_detail_screen.dart';
+import 'create_project_screen.dart';
 
 class ProjectDashboardScreen extends StatefulWidget {
   const ProjectDashboardScreen({super.key});
@@ -14,11 +16,22 @@ class ProjectDashboardScreen extends StatefulWidget {
 class _ProjectDashboardScreenState extends State<ProjectDashboardScreen> {
   List<ProjectPipeline> _pipelines = [];
   bool _isLoading = true;
+  String? _currentUserId; // Cache current user ID để kiểm tra owner
 
   @override
   void initState() {
     super.initState();
+    _loadCurrentUserId();
     _loadPipelines();
+  }
+
+  Future<void> _loadCurrentUserId() async {
+    final currentUser = await UserSession.getCurrentUser();
+    if (currentUser != null) {
+      setState(() {
+        _currentUserId = currentUser['userId']?.toString();
+      });
+    }
   }
 
   Future<void> _loadPipelines() async {
@@ -79,6 +92,23 @@ class _ProjectDashboardScreenState extends State<ProjectDashboardScreen> {
         foregroundColor: Colors.white,
         actions: [
           IconButton(
+            icon: const Icon(Icons.add),
+            onPressed: () async {
+              final projectId = await Navigator.push<String>(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const CreateProjectScreen(),
+                ),
+              );
+              
+              // Reload pipelines sau khi tạo dự án mới
+              if (projectId != null && mounted) {
+                await _loadPipelines();
+              }
+            },
+            tooltip: 'Tạo dự án mới',
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadPipelines,
             tooltip: 'Làm mới',
@@ -122,12 +152,35 @@ class _ProjectDashboardScreenState extends State<ProjectDashboardScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Bắt đầu bằng cách tìm kiếm nhà thiết kế',
+            'Tạo dự án mới để bắt đầu quản lý',
             style: TextStyle(
               fontSize: 14,
               color: Colors.grey[500],
             ),
             textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: () async {
+              final projectId = await Navigator.push<String>(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const CreateProjectScreen(),
+                ),
+              );
+              
+              // Reload pipelines sau khi tạo dự án mới
+              if (projectId != null && mounted) {
+                await _loadPipelines();
+              }
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('Tạo dự án mới'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue[700],
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
           ),
         ],
       ),
@@ -326,6 +379,8 @@ class _ProjectDashboardScreenState extends State<ProjectDashboardScreen> {
             pipeline.designerName!,
             pipeline.designStatus,
             () => _openChatWithDesigner(pipeline),
+            pipeline,
+            PipelineStage.design,
           ),
         if (pipeline.contractorName != null)
           _buildCollaboratorItem(
@@ -333,6 +388,8 @@ class _ProjectDashboardScreenState extends State<ProjectDashboardScreen> {
             pipeline.contractorName!,
             pipeline.constructionStatus,
             () => _openChatWithContractor(pipeline),
+            pipeline,
+            PipelineStage.construction,
           ),
         if (pipeline.storeName != null)
           _buildCollaboratorItem(
@@ -340,6 +397,8 @@ class _ProjectDashboardScreenState extends State<ProjectDashboardScreen> {
             pipeline.storeName!,
             pipeline.materialsStatus,
             () => _openChatWithStore(pipeline),
+            pipeline,
+            PipelineStage.materials,
           ),
       ],
     );
@@ -350,9 +409,12 @@ class _ProjectDashboardScreenState extends State<ProjectDashboardScreen> {
     String name,
     CollaborationStatus status,
     VoidCallback onTap,
+    ProjectPipeline pipeline,
+    PipelineStage stageType, // Giai đoạn tương ứng (design, construction, materials)
   ) {
     Color statusColor;
     String statusText;
+    bool canMarkComplete = false; // Chỉ owner mới được đánh dấu hoàn thành
 
     switch (status) {
       case CollaborationStatus.none:
@@ -367,6 +429,7 @@ class _ProjectDashboardScreenState extends State<ProjectDashboardScreen> {
       case CollaborationStatus.inProgress:
         statusColor = Colors.green;
         statusText = 'Đang hợp tác';
+        canMarkComplete = true; // Có thể đánh dấu hoàn thành
         break;
       case CollaborationStatus.completed:
         statusColor = Colors.blue;
@@ -380,59 +443,209 @@ class _ProjectDashboardScreenState extends State<ProjectDashboardScreen> {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: InkWell(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey[300]!),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      role,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey[300]!),
+        ),
+        child: Column(
+          children: [
+            // Phần thông tin đối tác
+            InkWell(
+              onTap: onTap,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          role,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          name,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: statusColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      statusText,
                       style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
+                        color: statusColor,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      name,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  statusText,
-                  style: TextStyle(
-                    color: statusColor,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
+            ),
+            // Button đánh dấu hoàn thành (chỉ hiển thị nếu đang hợp tác và là owner)
+            if (canMarkComplete && _currentUserId != null && pipeline.ownerId == _currentUserId) ...[
+              const SizedBox(height: 8),
+              const Divider(height: 1),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => _showCompleteStageDialog(pipeline, stageType, role),
+                  icon: const Icon(Icons.check_circle, size: 18),
+                  label: const Text('Đánh dấu hoàn thành'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.green[700],
+                    side: BorderSide(color: Colors.green[300]!),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
                   ),
                 ),
               ),
             ],
-          ),
+          ],
         ),
       ),
     );
+  }
+
+  /// Hiển thị dialog xác nhận đánh dấu hoàn thành giai đoạn
+  Future<void> _showCompleteStageDialog(
+    ProjectPipeline pipeline,
+    PipelineStage stageType,
+    String roleName,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.green[700]),
+            const SizedBox(width: 8),
+            const Expanded(child: Text('Xác nhận hoàn thành')),
+          ],
+        ),
+        content: Text(
+          'Bạn có chắc chắn muốn đánh dấu giai đoạn "$roleName" là hoàn thành không?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Hủy'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green[700],
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Xác nhận'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await _completeStage(pipeline, stageType, roleName);
+    }
+  }
+
+  /// Thực hiện đánh dấu hoàn thành giai đoạn
+  Future<void> _completeStage(
+    ProjectPipeline pipeline,
+    PipelineStage stageType,
+    String roleName,
+  ) async {
+    try {
+      bool success = false;
+      String? completedByUserId;
+      String? completedByName;
+
+      // Xác định người hoàn thành
+      switch (stageType) {
+        case PipelineStage.design:
+          completedByUserId = pipeline.designerId;
+          completedByName = pipeline.designerName;
+          success = await PipelineService.completeDesign(
+            pipelineId: pipeline.id,
+            designFileUrl: pipeline.designFileUrl, // Sử dụng file URL đã có (nếu có)
+          );
+          break;
+        case PipelineStage.construction:
+          completedByUserId = pipeline.contractorId;
+          completedByName = pipeline.contractorName;
+          success = await PipelineService.completeConstruction(
+            pipelineId: pipeline.id,
+            constructionPlanUrl: pipeline.constructionPlanUrl,
+          );
+          break;
+        case PipelineStage.materials:
+          completedByUserId = pipeline.storeId;
+          completedByName = pipeline.storeName;
+          success = await PipelineService.completeMaterials(
+            pipelineId: pipeline.id,
+            quoteUrl: pipeline.materialQuoteUrl,
+          );
+          break;
+      }
+
+      if (!mounted) return;
+
+      if (success) {
+        // Lưu completed project vào profile của người thực hiện
+        if (completedByUserId != null && completedByName != null) {
+          // Reload pipeline để lấy thông tin mới nhất (completedAt, etc.)
+          final updatedPipeline = await PipelineService.getPipeline(pipeline.id);
+          if (updatedPipeline != null) {
+            await CompletedProjectService.saveCompletedProject(
+              pipeline: updatedPipeline,
+              completedStage: stageType,
+              completedByUserId: completedByUserId,
+              completedByName: completedByName,
+            );
+            print('✅ Saved completed project to profile: $completedByName');
+          }
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Đã đánh dấu giai đoạn "$roleName" hoàn thành'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        // Reload pipelines
+        await _loadPipelines();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Lỗi khi đánh dấu hoàn thành'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ Error completing stage: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Lỗi: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _openChatWithDesigner(ProjectPipeline pipeline) async {

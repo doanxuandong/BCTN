@@ -21,6 +21,7 @@ class BusinessChatService {
     double? estimatedBudget,
     String? projectType,
     DateTime? expectedStartDate,
+    String? projectId, // Phase 1: Link với dự án đã chọn
   }) async {
     try {
       final currentUser = await UserSession.getCurrentUser();
@@ -32,6 +33,7 @@ class BusinessChatService {
         if (estimatedBudget != null) 'estimatedBudget': estimatedBudget,
         if (projectType != null) 'projectType': projectType,
         if (expectedStartDate != null) 'expectedStartDate': expectedStartDate.millisecondsSinceEpoch,
+        if (projectId != null) 'projectId': projectId, // Phase 1: Lưu projectId
         'status': 'pending', // pending, responded, accepted, rejected
       };
 

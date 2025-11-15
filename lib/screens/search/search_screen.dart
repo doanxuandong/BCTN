@@ -15,6 +15,8 @@ import 'smart_search_screen.dart';
 import '../profile/public_profile_screen.dart';
 import '../../services/friends/friends_service.dart';
 import '../../services/user/user_session.dart';
+import '../../services/project/pipeline_service.dart';
+import '../../models/project_pipeline.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -58,6 +60,10 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
   final Map<String, bool> _friendRequestsPending = {}; // userId -> true nếu đã gửi
   double? _cachedUserLat; // Cache user location để tránh gọi location service nhiều lần
   double? _cachedUserLng;
+  
+  // Phase 1: Project selection
+  List<ProjectPipeline> _userProjects = []; // Danh sách dự án của user
+  String? _selectedProjectId; // Dự án đã chọn khi tìm kiếm
 
   @override
   void initState() {
@@ -67,6 +73,9 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
     _selectedRegion = null;
     _specialtiesController = TextEditingController(text: _customSpecialties);
     _listenToNotifications();
+    
+    // Phase 1: Load user projects
+    _loadUserProjects();
     
     // FIX ANR: Chỉ load users, KHÔNG gọi location service ngay
     // Location sẽ chỉ được gọi khi user thực sự cần (click search button hoặc sau khi screen ổn định)
@@ -87,6 +96,27 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
     });
   }
   
+  /// Phase 1: Load user projects (chỉ load projects của owner)
+  Future<void> _loadUserProjects() async {
+    try {
+      final projects = await PipelineService.getUserPipelines();
+      final currentUser = await UserSession.getCurrentUser();
+      if (currentUser == null) return;
+      
+      final userId = currentUser['userId']?.toString();
+      if (userId == null) return;
+      
+      if (mounted) {
+        setState(() {
+          // Chỉ lấy projects mà user là owner
+          _userProjects = projects.where((p) => p.ownerId == userId).toList();
+        });
+      }
+    } catch (e) {
+      print('❌ Error loading user projects: $e');
+    }
+  }
+
   /// Load users mà không cần location (để tránh ANR)
   Future<void> _loadRealUsersWithoutLocation() async {
     setState(() {
@@ -404,6 +434,8 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
         },
         child: Column(
           children: [
+            // Phase 1: Banner hiển thị dự án đã chọn
+            if (_selectedProjectId != null) _buildProjectBanner(),
             _buildTypeSelector(),
             if (_showFilters) ...[
               Flexible(
@@ -417,6 +449,65 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
             _buildResultHeader(),
             Expanded(child: _buildResults()),
           ],
+      ),
+    );
+  }
+
+  /// Phase 1: Build banner hiển thị dự án đã chọn
+  Widget _buildProjectBanner() {
+    final selectedProject = _userProjects.firstWhere(
+      (p) => p.id == _selectedProjectId,
+      orElse: () => _userProjects.first,
+    );
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.all(8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.blue[50],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.blue[300]!, width: 1.5),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.folder_special, color: Colors.blue[700], size: 24),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Đang tìm kiếm cho:',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.blue[700],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  selectedProject.projectName,
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.blue[900],
+                    fontWeight: FontWeight.bold,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.close, color: Colors.blue[700], size: 20),
+            onPressed: () {
+              setState(() {
+                _selectedProjectId = null;
+              });
+            },
+            tooltip: 'Bỏ chọn dự án',
+          ),
+        ],
       ),
     );
   }
@@ -472,6 +563,9 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Phase 1: Project selection dropdown
+          _buildProjectSelector(),
+          const SizedBox(height: 12),
           Row(
             children: [
               Expanded(child: _buildProvinceDropdown()),
@@ -589,6 +683,41 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
         setState(() {
           _selectedRegion = v;
           _applyFilters();
+        });
+      },
+    );
+  }
+
+  /// Phase 1: Build project selector dropdown
+  Widget _buildProjectSelector() {
+    return DropdownButtonFormField<String?>(
+      value: _selectedProjectId,
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'Chọn dự án (tùy chọn)',
+        hintText: 'Tìm kiếm chung',
+        border: OutlineInputBorder(),
+        prefixIcon: Icon(Icons.folder_special),
+        helperText: 'Chọn dự án để liên kết với kết quả tìm kiếm',
+      ),
+      items: [
+        const DropdownMenuItem(
+          value: null,
+          child: Text('Tìm kiếm chung (không chọn dự án)'),
+        ),
+        ..._userProjects.map((project) {
+          return DropdownMenuItem(
+            value: project.id,
+            child: Text(
+              project.projectName,
+              overflow: TextOverflow.ellipsis,
+            ),
+          );
+        }),
+      ],
+      onChanged: (v) {
+        setState(() {
+          _selectedProjectId = v;
         });
       },
     );

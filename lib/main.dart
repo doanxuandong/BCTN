@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'services/core/firebase_config.dart';
 import 'screens/auth/login.dart';
 
@@ -18,6 +19,16 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(primarySwatch: Colors.blue),
       home: const AuthCheckScreen(),
       debugShowCheckedModeBanner: false,
+      // Thêm localizations để DatePickerDialog hoạt động
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('en', 'US'), // Tiếng Anh (fallback)
+        Locale('vi', 'VN'), // Tiếng Việt (nếu có locale file)
+      ],
     );
   }
 }

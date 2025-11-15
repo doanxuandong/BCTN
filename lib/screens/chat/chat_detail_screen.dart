@@ -1409,123 +1409,255 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     final budgetController = TextEditingController();
     final projectTypeController = TextEditingController();
     DateTime? selectedDate;
+    
+    // Phase 1 Enhancement: Load user projects
+    List<ProjectPipeline> userProjects = [];
+    String? selectedProjectId;
+    bool isLoadingProjects = true;
+    
+    try {
+      userProjects = await PipelineService.getUserPipelines();
+      final currentUser = await UserSession.getCurrentUser();
+      if (currentUser != null) {
+        final userId = currentUser['userId']?.toString();
+        if (userId != null) {
+          userProjects = userProjects.where((p) => p.ownerId == userId).toList();
+        }
+      }
+    } catch (e) {
+      print('❌ Error loading user projects: $e');
+    }
+    isLoadingProjects = false;
 
     await showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Yêu cầu báo giá'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: projectTypeController,
-                  decoration: const InputDecoration(
-                    labelText: 'Loại dự án',
-                    hintText: 'VD: Nhà ở dân dụng, Biệt thự...',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: projectDescriptionController,
-                  decoration: const InputDecoration(
-                    labelText: 'Mô tả dự án',
-                    hintText: 'Mô tả chi tiết về dự án của bạn',
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLines: 3,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: budgetController,
-                  decoration: const InputDecoration(
-                    labelText: 'Ngân sách dự kiến (triệu VNĐ)',
-                    hintText: 'VD: 50',
-                    border: OutlineInputBorder(),
-                  ),
-                  keyboardType: TextInputType.number,
-                ),
-                const SizedBox(height: 12),
-                InkWell(
-                  onTap: () async {
-                    final date = await showDatePicker(
-                      context: context,
-                      initialDate: selectedDate ?? DateTime.now(),
-                      firstDate: DateTime.now(),
-                      lastDate: DateTime.now().add(const Duration(days: 365)),
-                    );
-                    if (date != null) {
-                      setDialogState(() {
-                        selectedDate = date;
-                      });
-                    }
-                  },
-                  child: InputDecorator(
+        builder: (context, setDialogState) {
+          // Helper function để tự động điền thông tin từ dự án đã chọn
+          void _fillProjectInfo(ProjectPipeline? project) {
+            if (project == null) return;
+            
+            // Điền projectType
+            String? projectTypeText;
+            switch (project.projectType) {
+              case ProjectType.residential:
+                projectTypeText = 'Nhà ở';
+                break;
+              case ProjectType.office:
+                projectTypeText = 'Văn phòng';
+                break;
+              case ProjectType.commercial:
+                projectTypeText = 'Thương mại';
+                break;
+              case ProjectType.industrial:
+                projectTypeText = 'Công nghiệp';
+                break;
+              case ProjectType.other:
+                projectTypeText = 'Khác';
+                break;
+              default:
+                projectTypeText = null;
+            }
+            if (projectTypeText != null) {
+              projectTypeController.text = projectTypeText;
+            }
+            
+            // Điền description
+            if (project.description != null && project.description!.isNotEmpty) {
+              projectDescriptionController.text = project.description!;
+            }
+            
+            // Điền budget theo loại đối tác
+            final receiverType = _chat?.receiverType ?? _receiverAccountType;
+            double? budget;
+            if (receiverType != null) {
+              budget = project.getBudgetForPartnerType(receiverType);
+            }
+            if (budget != null) {
+              budgetController.text = budget.toStringAsFixed(0);
+            }
+            
+            // Điền startDate
+            if (project.startDate != null) {
+              selectedDate = project.startDate;
+            }
+          }
+          
+          return AlertDialog(
+            title: const Text('Yêu cầu báo giá'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Phase 1 Enhancement: Dropdown chọn dự án
+                  if (isLoadingProjects)
+                    const Center(child: Padding(
+                      padding: EdgeInsets.all(16.0),
+                      child: CircularProgressIndicator(),
+                    ))
+                  else ...[
+                    DropdownButtonFormField<String?>(
+                      value: selectedProjectId,
+                      isExpanded: true, // Quan trọng: Để tránh overflow
+                      decoration: const InputDecoration(
+                        labelText: 'Chọn dự án (tùy chọn)',
+                        hintText: 'Tạo mới',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.folder_special),
+                        helperText: 'Chọn dự án để tự động điền thông tin',
+                      ),
+                      items: [
+                        const DropdownMenuItem(
+                          value: null,
+                          child: Text(
+                            'Tạo mới (nhập thông tin)',
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                        ),
+                        ...userProjects.map((project) {
+                          return DropdownMenuItem(
+                            value: project.id,
+                            child: Text(
+                              project.projectName,
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                          );
+                        }),
+                      ],
+                      onChanged: (value) {
+                        setDialogState(() {
+                          selectedProjectId = value;
+                          // Tự động điền thông tin khi chọn dự án
+                          if (value != null) {
+                            final project = userProjects.firstWhere(
+                              (p) => p.id == value,
+                              orElse: () => userProjects.first,
+                            );
+                            _fillProjectInfo(project);
+                          } else {
+                            // Xóa thông tin khi chọn "Tạo mới"
+                            projectTypeController.clear();
+                            projectDescriptionController.clear();
+                            budgetController.clear();
+                            selectedDate = null;
+                          }
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  
+                  TextField(
+                    controller: projectTypeController,
                     decoration: const InputDecoration(
-                      labelText: 'Ngày bắt đầu dự kiến',
+                      labelText: 'Loại dự án',
+                      hintText: 'VD: Nhà ở dân dụng, Biệt thự...',
                       border: OutlineInputBorder(),
-                      suffixIcon: Icon(Icons.calendar_today),
-                    ),
-                    child: Text(
-                      selectedDate != null
-                          ? '${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}'
-                          : 'Chọn ngày',
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: projectDescriptionController,
+                    decoration: const InputDecoration(
+                      labelText: 'Mô tả dự án',
+                      hintText: 'Mô tả chi tiết về dự án của bạn',
+                      border: OutlineInputBorder(),
+                    ),
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: budgetController,
+                    decoration: const InputDecoration(
+                      labelText: 'Ngân sách dự kiến (triệu VNĐ)',
+                      hintText: 'VD: 50',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                  const SizedBox(height: 12),
+                  InkWell(
+                    onTap: () async {
+                      final date = await showDatePicker(
+                        context: context,
+                        initialDate: selectedDate ?? DateTime.now(),
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 365)),
+                      );
+                      if (date != null) {
+                        setDialogState(() {
+                          selectedDate = date;
+                        });
+                      }
+                    },
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Ngày bắt đầu dự kiến',
+                        border: OutlineInputBorder(),
+                        suffixIcon: Icon(Icons.calendar_today),
+                      ),
+                      child: Text(
+                        selectedDate != null
+                            ? '${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}'
+                            : 'Chọn ngày',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Hủy'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                if (projectDescriptionController.text.isEmpty) {
-                  _showSnackBar('Vui lòng nhập mô tả dự án');
-                  return;
-                }
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Hủy'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  if (projectDescriptionController.text.isEmpty) {
+                    _showSnackBar('Vui lòng nhập mô tả dự án');
+                    return;
+                  }
 
-                // Sử dụng receiverType từ chat hoặc từ user profile (fallback)
-                final receiverType = _chat?.receiverType ?? _receiverAccountType;
-                if (receiverType == null || _receiverId == null) {
-                  _showSnackBar('Lỗi: Không tìm thấy thông tin người nhận');
-                  return;
-                }
+                  // Sử dụng receiverType từ chat hoặc từ user profile (fallback)
+                  final receiverType = _chat?.receiverType ?? _receiverAccountType;
+                  if (receiverType == null || _receiverId == null) {
+                    _showSnackBar('Lỗi: Không tìm thấy thông tin người nhận');
+                    return;
+                  }
 
-                final budget = budgetController.text.isNotEmpty
-                    ? double.tryParse(budgetController.text)
-                    : null;
+                  final budget = budgetController.text.isNotEmpty
+                      ? double.tryParse(budgetController.text)
+                      : null;
 
-                final messageId = await BusinessChatService.sendQuoteRequest(
-                  chatId: widget.chatId,
-                  receiverId: _receiverId!,
-                  receiverType: receiverType,
-                  projectDescription: projectDescriptionController.text,
-                  estimatedBudget: budget,
-                  projectType: projectTypeController.text.isNotEmpty
-                      ? projectTypeController.text
-                      : null,
-                  expectedStartDate: selectedDate,
-                );
+                  final messageId = await BusinessChatService.sendQuoteRequest(
+                    chatId: widget.chatId,
+                    receiverId: _receiverId!,
+                    receiverType: receiverType,
+                    projectDescription: projectDescriptionController.text,
+                    estimatedBudget: budget,
+                    projectType: projectTypeController.text.isNotEmpty
+                        ? projectTypeController.text
+                        : null,
+                    expectedStartDate: selectedDate,
+                    projectId: selectedProjectId, // Phase 1: Lưu projectId
+                  );
 
-                if (messageId != null && mounted) {
-                  Navigator.pop(context);
-                  await _loadMessages();
-                  _showSnackBar('Đã gửi yêu cầu báo giá');
-                } else {
-                  _showSnackBar('Lỗi khi gửi yêu cầu');
-                }
-              },
-              child: const Text('Gửi'),
-            ),
-          ],
-        ),
+                  if (messageId != null && mounted) {
+                    Navigator.pop(context);
+                    await _loadMessages();
+                    _showSnackBar('Đã gửi yêu cầu báo giá');
+                  } else {
+                    _showSnackBar('Lỗi khi gửi yêu cầu');
+                  }
+                },
+                child: const Text('Gửi'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -2419,32 +2551,56 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       return;
     }
 
+    // Phase 1 Enhancement: Load user projects (chỉ nếu user là owner)
+    final isCurrentUserOwner = _currentUserAccountType == null || 
+                               _currentUserAccountType == UserAccountType.general;
+    
+    List<ProjectPipeline> userProjects = [];
+    String? selectedProjectId;
+    
+    if (isCurrentUserOwner) {
+      try {
+        final allProjects = await PipelineService.getUserPipelines();
+        final currentUser = await UserSession.getCurrentUser();
+        if (currentUser != null) {
+          final userId = currentUser['userId']?.toString();
+          if (userId != null) {
+            // Chỉ lấy projects mà user là owner
+            userProjects = allProjects.where((p) => p.ownerId == userId).toList();
+          }
+        }
+      } catch (e) {
+        print('❌ Error loading user projects: $e');
+      }
+    }
+
     final projectNameController = TextEditingController();
     String? selectedPartnerId;
     String? selectedPartnerName;
+    UserProfile? partnerProfile; // Lưu profile đầy đủ để hiển thị
 
-    // Lấy thông tin đối tác
+    // Lấy thông tin đối tác (đầy đủ)
     if (receiverType == UserAccountType.designer) {
       selectedPartnerId = _receiverId;
       try {
-        final profile = await UserProfileService.getProfile(_receiverId!);
-        selectedPartnerName = profile?.name ?? _titleName ?? 'Designer';
+        partnerProfile = await UserProfileService.getProfile(_receiverId!);
+        selectedPartnerName = partnerProfile?.name ?? _titleName ?? 'Designer';
       } catch (e) {
         selectedPartnerName = _titleName ?? 'Designer';
       }
     } else if (receiverType == UserAccountType.contractor) {
       selectedPartnerId = _receiverId;
       try {
-        final profile = await UserProfileService.getProfile(_receiverId!);
-        selectedPartnerName = profile?.name ?? _titleName ?? 'Contractor';
+        partnerProfile = await UserProfileService.getProfile(_receiverId!);
+        selectedPartnerName = partnerProfile?.name ?? _titleName ?? 'Contractor';
       } catch (e) {
         selectedPartnerName = _titleName ?? 'Contractor';
       }
     } else if (receiverType == UserAccountType.store) {
       selectedPartnerId = _receiverId;
       try {
-        final profile = await UserProfileService.getProfile(_receiverId!);
-        selectedPartnerName = profile?.name ?? _titleName ?? 'Store';
+        partnerProfile = await UserProfileService.getProfile(_receiverId!);
+        selectedPartnerName = partnerProfile?.name ?? _titleName ?? 'Store';
       } catch (e) {
         selectedPartnerName = _titleName ?? 'Store';
       }
@@ -2452,62 +2608,100 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.handshake, color: Colors.blue[700]),
-            const SizedBox(width: 8),
-            const Expanded(child: Text('Bắt đầu hợp tác')),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Row(
             children: [
-              Text(
-                'Bạn đang bắt đầu hợp tác với:',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.grey[700],
+              Icon(Icons.handshake, color: Colors.blue[700]),
+              const SizedBox(width: 8),
+              const Expanded(child: Text('Bắt đầu hợp tác')),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Bạn đang bắt đầu hợp tác với:',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey[700],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue[50],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue[200]!),
+                const SizedBox(height: 12),
+                // Card hiển thị đối tác - Design chuyên nghiệp
+                _buildPartnerCard(
+                  partnerProfile: partnerProfile,
+                  partnerName: selectedPartnerName ?? 'Đối tác',
+                  partnerType: receiverType,
                 ),
-                child: Row(
-                  children: [
-                    Icon(Icons.person, size: 20, color: Colors.blue[700]),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        selectedPartnerName ?? 'Đối tác',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.blue[900],
+                const SizedBox(height: 20),
+                
+                // Phase 1 Enhancement: Dropdown chọn dự án (chỉ nếu user là owner)
+                if (isCurrentUserOwner && userProjects.isNotEmpty) ...[
+                  DropdownButtonFormField<String?>(
+                    value: selectedProjectId,
+                    isExpanded: true, // Quan trọng: Để tránh overflow
+                    decoration: const InputDecoration(
+                      labelText: 'Chọn dự án (tùy chọn)',
+                      hintText: 'Tạo mới',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.folder_special),
+                      helperText: 'Chọn dự án để liên kết với pipeline',
+                    ),
+                    items: [
+                      const DropdownMenuItem(
+                        value: null,
+                        child: Text(
+                          'Tạo mới (nhập tên dự án)',
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
                         ),
                       ),
-                    ),
-                  ],
+                      ...userProjects.map((project) {
+                        return DropdownMenuItem(
+                          value: project.id,
+                          child: Text(
+                            project.projectName,
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                        );
+                      }),
+                    ],
+                    onChanged: (value) {
+                      setDialogState(() {
+                        selectedProjectId = value;
+                        // Tự động điền tên dự án khi chọn dự án
+                        if (value != null) {
+                          final project = userProjects.firstWhere(
+                            (p) => p.id == value,
+                            orElse: () => userProjects.first,
+                          );
+                          projectNameController.text = project.projectName;
+                        } else {
+                          // Xóa tên dự án khi chọn "Tạo mới"
+                          projectNameController.clear();
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                
+                TextField(
+                  controller: projectNameController,
+                  decoration: InputDecoration(
+                    labelText: 'Tên dự án (tùy chọn)',
+                    hintText: isCurrentUserOwner && userProjects.isNotEmpty
+                        ? 'Tên dự án sẽ tự động điền nếu chọn ở trên'
+                        : 'VD: Nhà phố 2 tầng, Biệt thự hiện đại...',
+                    border: const OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.architecture),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: projectNameController,
-                decoration: InputDecoration(
-                  labelText: 'Tên dự án (tùy chọn)',
-                  hintText: 'VD: Nhà phố 2 tầng, Biệt thự hiện đại...',
-                  border: const OutlineInputBorder(),
-                  prefixIcon: const Icon(Icons.architecture),
-                ),
-              ),
               const SizedBox(height: 12),
               Text(
                 'Sau khi bắt đầu hợp tác, bạn sẽ có thể:',
@@ -2552,6 +2746,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                     designerName: selectedPartnerName ?? 'Designer',
                     searchMetadata: searchMetadata,
                     projectName: projectName,
+                    projectId: selectedProjectId, // Phase 1: Link với dự án đã chọn
                   );
                 } else if (receiverType == UserAccountType.contractor) {
                   pipelineId = await PipelineService.createPipelineFromContractorSearch(
@@ -2559,6 +2754,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                     contractorName: selectedPartnerName ?? 'Contractor',
                     searchMetadata: searchMetadata,
                     projectName: projectName,
+                    projectId: selectedProjectId, // Phase 1: Link với dự án đã chọn
                   );
                 } else if (receiverType == UserAccountType.store) {
                   pipelineId = await PipelineService.createPipelineFromStoreSearch(
@@ -2566,6 +2762,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                     storeName: selectedPartnerName ?? 'Store',
                     searchMetadata: searchMetadata,
                     projectName: projectName,
+                    projectId: selectedProjectId, // Phase 1: Link với dự án đã chọn
                   );
                 }
 
@@ -2594,6 +2791,220 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               foregroundColor: Colors.white,
             ),
             child: const Text('Bắt đầu hợp tác'),
+          ),
+        ],
+      ),
+        ),
+    );
+  }
+
+  /// Widget hiển thị card đối tác chuyên nghiệp
+  Widget _buildPartnerCard({
+    UserProfile? partnerProfile,
+    required String partnerName,
+    required UserAccountType partnerType,
+  }) {
+    // Xác định màu sắc và icon theo loại đối tác
+    Color primaryColor;
+    Color backgroundColor;
+    IconData icon;
+    String typeLabel;
+    
+    switch (partnerType) {
+      case UserAccountType.designer:
+        primaryColor = Colors.purple[700]!;
+        backgroundColor = Colors.purple[50]!;
+        icon = Icons.palette;
+        typeLabel = 'Nhà thiết kế';
+        break;
+      case UserAccountType.contractor:
+        primaryColor = Colors.orange[700]!;
+        backgroundColor = Colors.orange[50]!;
+        icon = Icons.construction;
+        typeLabel = 'Chủ thầu';
+        break;
+      case UserAccountType.store:
+        primaryColor = Colors.green[700]!;
+        backgroundColor = Colors.green[50]!;
+        icon = Icons.store;
+        typeLabel = 'Cửa hàng VLXD';
+        break;
+      default:
+        primaryColor = Colors.blue[700]!;
+        backgroundColor = Colors.blue[50]!;
+        icon = Icons.person;
+        typeLabel = 'Đối tác';
+    }
+
+    // Lấy avatar URL
+    final avatarUrl = partnerProfile?.avatarUrl ?? partnerProfile?.pic;
+    
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            backgroundColor,
+            backgroundColor.withOpacity(0.5),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: primaryColor.withOpacity(0.3),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: primaryColor.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          // Avatar với badge
+          Stack(
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: primaryColor,
+                    width: 2.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: primaryColor.withOpacity(0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: ClipOval(
+                  child: avatarUrl != null && avatarUrl.isNotEmpty
+                      ? Image.network(
+                          avatarUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              color: primaryColor.withOpacity(0.1),
+                              child: Icon(
+                                icon,
+                                size: 32,
+                                color: primaryColor,
+                              ),
+                            );
+                          },
+                        )
+                      : Container(
+                          color: primaryColor.withOpacity(0.1),
+                          child: Icon(
+                            icon,
+                            size: 32,
+                            color: primaryColor,
+                          ),
+                        ),
+                ),
+              ),
+              // Badge loại đối tác
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: primaryColor,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                  child: Icon(
+                    icon,
+                    size: 14,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 16),
+          // Thông tin đối tác
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Tên đối tác
+                Text(
+                  partnerName,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: primaryColor,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                // Loại đối tác
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: primaryColor.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    typeLabel,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: primaryColor,
+                    ),
+                  ),
+                ),
+                // Rating (nếu có)
+                if (partnerProfile != null && partnerProfile.rating > 0) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.star,
+                        size: 14,
+                        color: Colors.amber[700],
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${partnerProfile.rating.toStringAsFixed(1)}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                      if (partnerProfile.reviewCount > 0) ...[
+                        const SizedBox(width: 4),
+                        Text(
+                          '(${partnerProfile.reviewCount} đánh giá)',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+          // Icon mũi tên
+          Icon(
+            Icons.arrow_forward_ios,
+            size: 16,
+            color: primaryColor.withOpacity(0.5),
           ),
         ],
       ),

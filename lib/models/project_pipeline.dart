@@ -1,3 +1,4 @@
+import 'user_profile.dart';
 
 /// Trạng thái hợp tác trong pipeline
 enum CollaborationStatus {
@@ -16,6 +17,25 @@ enum PipelineStage {
   materials,       // Giai đoạn vật liệu (với cửa hàng VLXD)
 }
 
+/// Trạng thái dự án
+enum ProjectStatus {
+  planning,       // Đang lên kế hoạch
+  designing,      // Đang thiết kế
+  constructing,   // Đang thi công
+  completed,      // Đã hoàn thành
+  onHold,         // Tạm hoãn
+  cancelled,      // Đã hủy
+}
+
+/// Loại dự án
+enum ProjectType {
+  residential,    // Nhà ở
+  office,         // Văn phòng
+  commercial,     // Thương mại
+  industrial,     // Công nghiệp
+  other,          // Khác
+}
+
 /// Mô hình Pipeline dự án - theo dõi quá trình từ thiết kế → thi công → vật liệu
 class ProjectPipeline {
   final String id;
@@ -23,6 +43,20 @@ class ProjectPipeline {
   final String ownerId; // ID người dùng thường (chủ dự án)
   final DateTime createdAt;
   final DateTime? updatedAt;
+  
+  // Thông tin dự án mới (Phase 1)
+  final String? description; // Mô tả dự án
+  final double? budget; // Ngân sách tổng dự kiến (VNĐ) - optional, có thể tính từ breakdown
+  final String? location; // Địa điểm (Tỉnh/Thành phố)
+  final DateTime? startDate; // Ngày bắt đầu dự kiến
+  final DateTime? endDate; // Ngày hoàn thành dự kiến
+  final ProjectStatus status; // Trạng thái dự án
+  final ProjectType? projectType; // Loại dự án
+  
+  // Budget breakdown (Phase 1 Enhancement)
+  final double? designBudget; // Ngân sách cho nhà thiết kế (triệu VNĐ)
+  final double? constructionBudget; // Ngân sách cho chủ thầu (triệu VNĐ)
+  final double? materialsBudget; // Ngân sách cho cửa hàng VLXD (triệu VNĐ)
   
   // Thông tin giai đoạn thiết kế
   final String? designerId;
@@ -55,6 +89,16 @@ class ProjectPipeline {
     required this.ownerId,
     required this.createdAt,
     this.updatedAt,
+    this.description,
+    this.budget,
+    this.location,
+    this.startDate,
+    this.endDate,
+    this.status = ProjectStatus.planning,
+    this.projectType,
+    this.designBudget,
+    this.constructionBudget,
+    this.materialsBudget,
     this.designerId,
     this.designerName,
     this.designStatus = CollaborationStatus.none,
@@ -80,6 +124,16 @@ class ProjectPipeline {
     String? ownerId,
     DateTime? createdAt,
     DateTime? updatedAt,
+    String? description,
+    double? budget,
+    String? location,
+    DateTime? startDate,
+    DateTime? endDate,
+    ProjectStatus? status,
+    ProjectType? projectType,
+    double? designBudget,
+    double? constructionBudget,
+    double? materialsBudget,
     String? designerId,
     String? designerName,
     CollaborationStatus? designStatus,
@@ -104,6 +158,16 @@ class ProjectPipeline {
       ownerId: ownerId ?? this.ownerId,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      description: description ?? this.description,
+      budget: budget ?? this.budget,
+      location: location ?? this.location,
+      startDate: startDate ?? this.startDate,
+      endDate: endDate ?? this.endDate,
+      status: status ?? this.status,
+      projectType: projectType ?? this.projectType,
+      designBudget: designBudget ?? this.designBudget,
+      constructionBudget: constructionBudget ?? this.constructionBudget,
+      materialsBudget: materialsBudget ?? this.materialsBudget,
       designerId: designerId ?? this.designerId,
       designerName: designerName ?? this.designerName,
       designStatus: designStatus ?? this.designStatus,
@@ -134,6 +198,20 @@ class ProjectPipeline {
       updatedAt: data['updatedAt'] != null 
           ? DateTime.fromMillisecondsSinceEpoch(data['updatedAt']) 
           : null,
+      description: data['description'],
+      budget: data['budget'] != null ? (data['budget'] as num).toDouble() : null,
+      location: data['location'],
+      designBudget: data['designBudget'] != null ? (data['designBudget'] as num).toDouble() : null,
+      constructionBudget: data['constructionBudget'] != null ? (data['constructionBudget'] as num).toDouble() : null,
+      materialsBudget: data['materialsBudget'] != null ? (data['materialsBudget'] as num).toDouble() : null,
+      startDate: data['startDate'] != null
+          ? DateTime.fromMillisecondsSinceEpoch(data['startDate'])
+          : null,
+      endDate: data['endDate'] != null
+          ? DateTime.fromMillisecondsSinceEpoch(data['endDate'])
+          : null,
+      status: _parseProjectStatus(data['status']),
+      projectType: _parseProjectType(data['projectType']),
       designerId: data['designerId'],
       designerName: data['designerName'],
       designStatus: _parseCollaborationStatus(data['designStatus']),
@@ -169,6 +247,16 @@ class ProjectPipeline {
       'ownerId': ownerId,
       'createdAt': createdAt.millisecondsSinceEpoch,
       'updatedAt': updatedAt?.millisecondsSinceEpoch ?? DateTime.now().millisecondsSinceEpoch,
+      'description': description,
+      'budget': budget,
+      'location': location,
+      'designBudget': designBudget,
+      'constructionBudget': constructionBudget,
+      'materialsBudget': materialsBudget,
+      'startDate': startDate?.millisecondsSinceEpoch,
+      'endDate': endDate?.millisecondsSinceEpoch,
+      'status': status.toString().split('.').last,
+      'projectType': projectType?.toString().split('.').last,
       'designerId': designerId,
       'designerName': designerName,
       'designStatus': designStatus.toString().split('.').last,
@@ -205,6 +293,55 @@ class ProjectPipeline {
       (e) => e.toString().split('.').last == str,
       orElse: () => PipelineStage.design,
     );
+  }
+
+  static ProjectStatus _parseProjectStatus(dynamic value) {
+    if (value == null) return ProjectStatus.planning;
+    final str = value.toString().split('.').last;
+    return ProjectStatus.values.firstWhere(
+      (e) => e.toString().split('.').last == str,
+      orElse: () => ProjectStatus.planning,
+    );
+  }
+
+  static ProjectType? _parseProjectType(dynamic value) {
+    if (value == null) return null;
+    final str = value.toString().split('.').last;
+    try {
+      return ProjectType.values.firstWhere(
+        (e) => e.toString().split('.').last == str,
+      );
+    } catch (e) {
+      return null;
+    }
+  }
+  
+  /// Kiểm tra xem dự án có đối tác nào chưa
+  bool hasAnyPartner() {
+    return designerId != null || contractorId != null || storeId != null;
+  }
+  
+  /// Lấy ngân sách theo loại đối tác
+  double? getBudgetForPartnerType(UserAccountType accountType) {
+    switch (accountType) {
+      case UserAccountType.designer:
+        return designBudget;
+      case UserAccountType.contractor:
+        return constructionBudget;
+      case UserAccountType.store:
+        return materialsBudget;
+      default:
+        return null;
+    }
+  }
+  
+  /// Tính tổng ngân sách từ breakdown (nếu có)
+  double? getTotalBudget() {
+    double? total;
+    if (designBudget != null) total = (total ?? 0) + designBudget!;
+    if (constructionBudget != null) total = (total ?? 0) + constructionBudget!;
+    if (materialsBudget != null) total = (total ?? 0) + materialsBudget!;
+    return total ?? budget; // Fallback to total budget if breakdown is empty
   }
 
   /// Lấy trạng thái hợp tác theo giai đoạn

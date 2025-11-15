@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import '../../models/user_profile.dart';
+import '../../models/completed_project.dart';
 import '../../services/user/user_profile_service.dart';
+import '../../services/project/completed_project_service.dart';
 import '../../services/social/post_service.dart';
 import '../../services/review/review_service.dart';
 import '../../services/user/user_session.dart';
 import '../../models/post_model.dart';
 import '../../models/review.dart';
 import '../../components/post_card.dart';
+import '../../components/completed_project_card.dart';
 import '../review/add_review_screen.dart';
 import '../review/reviews_list_screen.dart';
 
@@ -22,6 +25,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
   UserProfile? _profile;
   bool _loading = true;
   List<Post> _posts = [];
+  List<CompletedProject> _completedProjects = []; // Danh sách dự án đã hoàn thành
   Review? _myReview; // Review của mình (nếu đã đánh giá)
   String? _currentUserId;
 
@@ -35,6 +39,21 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
     final p = await UserProfileService.getProfile(widget.userId);
     final posts = await PostService.getPostsByUser(widget.userId);
     
+    // Load completed projects (chỉ hiển thị cho Designer, Contractor, Store)
+    List<CompletedProject> completedProjects = [];
+    if (p != null &&
+        (p.accountType == UserAccountType.designer ||
+            p.accountType == UserAccountType.contractor ||
+            p.accountType == UserAccountType.store)) {
+      print('📊 Loading completed projects for profile: ${p.displayName}');
+      print('  - widget.userId: ${widget.userId} (type: ${widget.userId.runtimeType})');
+      print('  - p.id: ${p.id} (type: ${p.id.runtimeType})');
+      // Đảm bảo userId là String khi query
+      final userIdString = widget.userId.toString();
+      completedProjects = await CompletedProjectService.getUserCompletedProjects(userIdString);
+      print('  - Loaded ${completedProjects.length} completed projects');
+    }
+    
     // Kiểm tra đã đánh giá chưa
     final currentUser = await UserSession.getCurrentUser();
     _currentUserId = currentUser?['userId'];
@@ -45,11 +64,13 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
     
     // Debug: Kiểm tra rating có đúng không
     print('📊 Profile rating: ${p?.rating}, reviewCount: ${p?.reviewCount}');
+    print('📊 Completed projects: ${completedProjects.length}');
     
     if (!mounted) return;
     setState(() {
       _profile = p;
       _posts = posts;
+      _completedProjects = completedProjects;
       _myReview = myReview;
       _loading = false;
     });
@@ -162,7 +183,53 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
                         _infoRow(Icons.category, _profile!.specialties.join(', ')),
                       const SizedBox(height: 8),
                       _summaryChipsWithReview(),
-                      const SizedBox(height: 16),
+                      
+                      // Section: Dự án đã hoàn thành (chỉ hiển thị cho Designer, Contractor, Store)
+                      if (_profile!.accountType == UserAccountType.designer ||
+                          _profile!.accountType == UserAccountType.contractor ||
+                          _profile!.accountType == UserAccountType.store) ...[
+                        const SizedBox(height: 24),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Dự án đã hoàn thành',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey[800],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        if (_completedProjects.isEmpty)
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[100],
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Center(
+                              child: Text(
+                                'Chưa có dự án nào được hoàn thành',
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                          )
+                        else
+                          ..._completedProjects.map(
+                            (project) => CompletedProjectCard(
+                              project: project,
+                              onTap: () {
+                                // TODO: Có thể navigate đến chi tiết dự án
+                              },
+                            ),
+                          ),
+                      ],
+                      
+                      const SizedBox(height: 24),
                       Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
