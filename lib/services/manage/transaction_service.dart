@@ -1,6 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/material_transaction.dart' as transaction;
+import '../../models/construction_material.dart';
+import '../../services/project/pipeline_service.dart';
 import 'transaction_history_service.dart';
+import 'material_service.dart';
 
 class TransactionService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -75,6 +78,103 @@ class TransactionService {
     } catch (e) {
       print('Error getting material transactions: $e');
       return [];
+    }
+  }
+
+  // Phase 2 Enhancement: Lấy giao dịch theo projectId
+  static Future<List<transaction.MaterialTransaction>> getTransactionsByProjectId(String projectId, {int limit = 100}) async {
+    try {
+      // Firestore yêu cầu composite index nếu dùng where + orderBy cùng lúc
+      // Nên chỉ dùng where, rồi sort ở client-side
+      final snap = await _firestore
+          .collection(_collection)
+          .where('projectId', isEqualTo: projectId)
+          .get();
+      
+      final transactions = snap.docs
+          .map((doc) => transaction.MaterialTransaction.fromFirestore(doc))
+          .toList();
+      
+      // Sort theo createdAt (mới nhất trước) ở client-side
+      transactions.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      
+      // Limit ở client-side
+      if (transactions.length > limit) {
+        return transactions.sublist(0, limit);
+      }
+      
+      return transactions;
+    } catch (e) {
+      print('Error getting project transactions: $e');
+      return [];
+    }
+  }
+
+  // Phase 2 Enhancement: Lấy giao dịch của project mà user có quyền xem
+  // (contractor, owner, designer, store có thể xem TẤT CẢ transactions của project họ tham gia)
+  static Future<List<transaction.MaterialTransaction>> getProjectTransactionsForUser(
+    String projectId,
+    String userId, {
+    int limit = 100,
+  }) async {
+    try {
+      // Lấy pipeline để kiểm tra user có tham gia project không
+      final pipeline = await PipelineService.getPipeline(projectId);
+      
+      // Nếu user là owner, contractor, designer, hoặc store trong project, trả về TẤT CẢ transactions
+      if (pipeline != null) {
+        final isOwner = pipeline.ownerId == userId;
+        final isContractor = pipeline.contractorId == userId;
+        final isDesigner = pipeline.designerId == userId;
+        final isStore = pipeline.storeId == userId;
+        
+        if (isOwner || isContractor || isDesigner || isStore) {
+          print('✅ User $userId is participant (owner/contractor/designer/store) in project $projectId, returning ALL transactions');
+          // Trả về TẤT CẢ transactions của project
+          final allTransactions = await getTransactionsByProjectId(projectId, limit: limit);
+          return allTransactions;
+        }
+      }
+      
+      // Nếu user KHÔNG tham gia project, chỉ lấy transactions mà user liên quan
+      print('⚠️ User $userId is NOT participant in project $projectId, filtering transactions');
+      final allTransactions = await getTransactionsByProjectId(projectId, limit: limit);
+      
+      // Filter: Chỉ lấy transactions mà:
+      // 1. userId = userId (user tạo transaction)
+      // 2. HOẶC fromUserId = userId (user là người chuyển)
+      // 3. HOẶC toUserId = userId (user là người nhận)
+      final filteredTransactions = allTransactions.where((t) =>
+        t.userId == userId ||
+        t.fromUserId == userId ||
+        t.toUserId == userId
+      ).toList();
+      
+      return filteredTransactions;
+    } catch (e) {
+      print('Error getting project transactions for user: $e');
+      return [];
+    }
+  }
+
+  // Phase 2 Enhancement: Tính tổng chi phí của project (chỉ tính export transactions)
+  static Future<double> getProjectTotalCost(String projectId) async {
+    try {
+      final transactions = await getTransactionsByProjectId(projectId);
+      
+      // Chỉ tính export transactions (xuất kho) - đây là chi phí
+      double totalCost = 0;
+      for (final txn in transactions) {
+        if (txn.type == transaction.TransactionType.export &&
+            txn.status == transaction.TransactionStatus.completed) {
+          totalCost += txn.totalAmount;
+        }
+      }
+      
+      return totalCost;
+    } catch (e) {
+      print('Error calculating project total cost: $e');
+      return 0;
     }
   }
 
@@ -193,9 +293,97 @@ class TransactionService {
         'lastUpdated': Timestamp.now(),
       });
       print('Material stock updated in Firestore');
+      
+      // Phase 3 Enhancement: Nếu export transaction có toUserId và projectId,
+      // tự động thêm vật liệu vào kho của người nhận (owner/contractor)
+      if (materialTransaction.type == transaction.TransactionType.export &&
+          materialTransaction.toUserId != null &&
+          materialTransaction.projectId != null) {
+        await _addMaterialToReceiver(materialTransaction);
+      }
     } catch (e) {
       print('Error updating material stock: $e');
       rethrow; // Re-throw để caller có thể xử lý
+    }
+  }
+
+  // Phase 3 Enhancement: Thêm vật liệu vào kho của người nhận khi store xuất kho cho owner/contractor
+  static Future<void> _addMaterialToReceiver(transaction.MaterialTransaction transaction) async {
+    try {
+      print('🔄 Adding material to receiver: ${transaction.toUserId}');
+      print('  - Material: ${transaction.materialName}');
+      print('  - Quantity: ${transaction.quantity}');
+      
+      // Lấy thông tin vật liệu gốc từ store để copy thông tin
+      final sourceMaterialDoc = await _firestore
+          .collection('materials')
+          .doc(transaction.materialId)
+          .get();
+      
+      if (!sourceMaterialDoc.exists) {
+        print('⚠️ Source material not found: ${transaction.materialId}');
+        return;
+      }
+      
+      final sourceMaterialData = sourceMaterialDoc.data()!;
+      final receiverId = transaction.toUserId!;
+      
+      // Tìm vật liệu có cùng tên trong kho của người nhận
+      final receiverMaterials = await MaterialService.getByUserId(receiverId);
+      final existingMaterial = receiverMaterials.firstWhere(
+        (m) => m.name.toLowerCase() == transaction.materialName.toLowerCase() &&
+               m.category == (sourceMaterialData['category'] as String? ?? ''),
+        orElse: () => ConstructionMaterial(
+          id: '',
+          userId: receiverId,
+          name: '',
+          category: '',
+          unit: '',
+          currentStock: 0,
+          minStock: 0,
+          maxStock: 0,
+          price: 0,
+          supplier: '',
+          description: '',
+          lastUpdated: DateTime.now(),
+        ),
+      );
+      
+      if (existingMaterial.id.isNotEmpty) {
+        // Vật liệu đã tồn tại trong kho của receiver: cập nhật stock
+        print('  - Material exists, updating stock...');
+        final newStock = existingMaterial.currentStock + transaction.quantity;
+        await _firestore.collection('materials').doc(existingMaterial.id).update({
+          'currentStock': newStock,
+          'lastUpdated': Timestamp.now(),
+        });
+        print('  - ✅ Updated stock: ${existingMaterial.currentStock} → $newStock');
+      } else {
+        // Vật liệu chưa có: tạo mới cho receiver
+        print('  - Material not found, creating new material for receiver...');
+        final newMaterial = ConstructionMaterial(
+          id: '', // Will be set by Firestore
+          userId: receiverId,
+          name: transaction.materialName,
+          category: sourceMaterialData['category'] as String? ?? 'Khác',
+          unit: sourceMaterialData['unit'] as String? ?? 'cái',
+          currentStock: transaction.quantity,
+          minStock: 0,
+          maxStock: (sourceMaterialData['maxStock'] as num?)?.toDouble() ?? transaction.quantity * 2,
+          price: transaction.unitPrice, // Sử dụng giá từ transaction
+          supplier: transaction.fromUserName ?? 'Từ giao dịch',
+          description: 'Nhận từ dự án: ${transaction.projectName ?? "N/A"}',
+          imageUrl: sourceMaterialData['imageUrl'] as String?,
+          lastUpdated: DateTime.now(),
+        );
+        
+        final newMaterialId = await MaterialService.create(newMaterial);
+        print('  - ✅ Created new material for receiver: $newMaterialId');
+        print('  - Stock: ${transaction.quantity} ${newMaterial.unit}');
+      }
+    } catch (e) {
+      print('❌ Error adding material to receiver: $e');
+      // Không throw để không ảnh hưởng đến transaction chính
     }
   }
 

@@ -2,9 +2,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../models/construction_material.dart';
 import '../../models/material_transaction.dart' as transaction;
+import '../../models/project_pipeline.dart';
 import '../../services/manage/material_service.dart';
 import '../../services/manage/transaction_service.dart';
+import '../../services/project/pipeline_service.dart';
 import '../../services/user/user_session.dart';
+import '../../services/user/user_profile_service.dart';
 
 class ExportMaterialScreen extends StatefulWidget {
   final ConstructionMaterial? material;
@@ -28,6 +31,12 @@ class _ExportMaterialScreenState extends State<ExportMaterialScreen> {
   List<ConstructionMaterial> _materials = [];
   bool _loading = true;
   String _searchQuery = '';
+  
+  // Phase 3 Enhancement: Project selection
+  List<ProjectPipeline> _userProjects = [];
+  String? _selectedProjectId;
+  ProjectPipeline? _selectedProject;
+  bool _loadingProjects = false;
 
   @override
   void initState() {
@@ -43,6 +52,41 @@ class _ExportMaterialScreenState extends State<ExportMaterialScreen> {
     }
     
     _loadMaterials();
+    _loadUserProjects();
+  }
+  
+  // Phase 3 Enhancement: Load projects where user is store
+  Future<void> _loadUserProjects() async {
+    setState(() => _loadingProjects = true);
+    try {
+      final currentUser = await UserSession.getCurrentUser();
+      if (currentUser == null) {
+        setState(() => _loadingProjects = false);
+        return;
+      }
+      
+      final userId = currentUser['userId']?.toString();
+      if (userId == null) {
+        setState(() => _loadingProjects = false);
+        return;
+      }
+      
+      // Load projects where user is store (storeId)
+      final allProjects = await PipelineService.getUserPipelines();
+      final userProjects = allProjects.where((p) => 
+        p.storeId == userId && 
+        p.materialsStatus != CollaborationStatus.none &&
+        p.materialsStatus != CollaborationStatus.cancelled
+      ).toList();
+      
+      setState(() {
+        _userProjects = userProjects;
+        _loadingProjects = false;
+      });
+    } catch (e) {
+      print('❌ Error loading user projects: $e');
+      setState(() => _loadingProjects = false);
+    }
   }
 
   @override
@@ -109,6 +153,11 @@ class _ExportMaterialScreenState extends State<ExportMaterialScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  // Phase 3 Enhancement: Project selector
+                  if (_userProjects.isNotEmpty) ...[
+                    _buildProjectSelector(),
+                    const SizedBox(height: 16),
+                  ],
                   _buildMaterialSelector(),
                   const SizedBox(height: 16),
                   _buildQuantityAndPrice(),
@@ -126,6 +175,96 @@ class _ExportMaterialScreenState extends State<ExportMaterialScreen> {
               ),
             ),
     );
+  }
+
+  // Phase 3 Enhancement: Build project selector
+  Widget _buildProjectSelector() {
+    return Card(
+      color: Colors.blue[50],
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Chọn dự án (tùy chọn)',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (_loadingProjects)
+              const Center(child: Padding(
+                padding: EdgeInsets.all(16.0),
+                child: CircularProgressIndicator(),
+              ))
+            else
+              DropdownButtonFormField<String?>(
+                value: _selectedProjectId,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Chọn dự án',
+                  hintText: 'Không chọn dự án',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.folder_special),
+                  helperText: 'Chọn dự án để liên kết giao dịch (tự động điền thông tin người nhận)',
+                ),
+                items: [
+                  const DropdownMenuItem(
+                    value: null,
+                    child: Text('Không chọn dự án'),
+                  ),
+                  ..._userProjects.map((project) {
+                    return DropdownMenuItem(
+                      value: project.id,
+                      child: Text(
+                        project.projectName,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                    );
+                  }),
+                ],
+                onChanged: (v) {
+                  setState(() {
+                    _selectedProjectId = v;
+                    if (v != null) {
+                      final selectedProject = _userProjects.firstWhere((p) => p.id == v);
+                      _selectedProject = selectedProject;
+                      // Tự động điền thông tin người nhận (owner hoặc contractor)
+                      // Ưu tiên owner nếu có, nếu không thì contractor
+                      final receiverId = selectedProject.ownerId ?? selectedProject.contractorId;
+                      if (receiverId != null) {
+                        _loadReceiverInfo(receiverId);
+                      }
+                    } else {
+                      _selectedProject = null;
+                    }
+                  });
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Phase 3 Enhancement: Load receiver info from project
+  Future<void> _loadReceiverInfo(String receiverId) async {
+    if (_selectedProject == null) return;
+    
+    try {
+      // Load profile để lấy tên đầy đủ
+      final profile = await UserProfileService.getProfile(receiverId);
+      if (profile != null && mounted) {
+        setState(() {
+          _receiverController.text = profile.displayName;
+        });
+      }
+    } catch (e) {
+      print('❌ Error loading receiver info: $e');
+    }
   }
 
   Widget _buildMaterialSelector() {
@@ -656,6 +795,43 @@ class _ExportMaterialScreenState extends State<ExportMaterialScreen> {
       final unitPrice = double.parse(_unitPriceController.text);
       final totalAmount = quantity * unitPrice;
 
+      // Phase 3 Enhancement: Determine from/to info from project
+      String? projectId;
+      String? projectName;
+      String? fromUserId;
+      String? fromUserName;
+      String? toUserId;
+      String? toUserName;
+      
+      if (_selectedProject != null) {
+        projectId = _selectedProject!.id;
+        projectName = _selectedProject!.projectName;
+        
+        // Store là người chuyển (from)
+        fromUserId = userId;
+        fromUserName = currentUser['name'] ?? 'Cửa hàng';
+        
+        // Owner hoặc Contractor là người nhận (to) - ưu tiên owner
+        // Load tên từ profile
+        if (_selectedProject!.ownerId != null) {
+          toUserId = _selectedProject!.ownerId;
+          try {
+            final ownerProfile = await UserProfileService.getProfile(_selectedProject!.ownerId!);
+            toUserName = ownerProfile?.displayName ?? 'Chủ nhà';
+          } catch (e) {
+            toUserName = 'Chủ nhà';
+          }
+        } else if (_selectedProject!.contractorId != null) {
+          toUserId = _selectedProject!.contractorId;
+          try {
+            final contractorProfile = await UserProfileService.getProfile(_selectedProject!.contractorId!);
+            toUserName = contractorProfile?.displayName ?? 'Chủ thầu';
+          } catch (e) {
+            toUserName = 'Chủ thầu';
+          }
+        }
+      }
+
       final materialTransaction = transaction.MaterialTransaction(
         id: '', // Will be generated by Firestore
         materialId: _selectedMaterial!.id,
@@ -674,6 +850,13 @@ class _ExportMaterialScreenState extends State<ExportMaterialScreen> {
         createdAt: DateTime.now(),
         lastUpdated: DateTime.now(),
         createdBy: currentUser['name'] ?? 'Unknown',
+        // Phase 3 Enhancement: Project info
+        projectId: projectId,
+        projectName: projectName,
+        fromUserId: fromUserId,
+        fromUserName: fromUserName,
+        toUserId: toUserId,
+        toUserName: toUserName,
       );
 
       print('Submitting export transaction...');

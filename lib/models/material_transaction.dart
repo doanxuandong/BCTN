@@ -36,6 +36,14 @@ class MaterialTransaction {
   final DateTime? approvedAt; // Thời gian duyệt
   final List<String> attachments; // Đính kèm (hóa đơn, chứng từ)
   final Map<String, dynamic> additionalData; // Dữ liệu bổ sung
+  
+  // Thông tin liên kết với Project (Phase 1 Enhancement)
+  final String? projectId; // ID của dự án (nếu transaction liên quan đến project)
+  final String? projectName; // Tên dự án
+  final String? fromUserId; // ID người/chủ thể chuyển (ví dụ: store khi xuất kho)
+  final String? fromUserName; // Tên người/chủ thể chuyển
+  final String? toUserId; // ID người/chủ thể nhận (ví dụ: owner/contractor khi store xuất kho)
+  final String? toUserName; // Tên người/chủ thể nhận
 
   MaterialTransaction({
     required this.id,
@@ -59,6 +67,12 @@ class MaterialTransaction {
     this.approvedAt,
     this.attachments = const [],
     this.additionalData = const {},
+    this.projectId,
+    this.projectName,
+    this.fromUserId,
+    this.fromUserName,
+    this.toUserId,
+    this.toUserName,
   });
 
   MaterialTransaction copyWith({
@@ -83,6 +97,12 @@ class MaterialTransaction {
     DateTime? approvedAt,
     List<String>? attachments,
     Map<String, dynamic>? additionalData,
+    String? projectId,
+    String? projectName,
+    String? fromUserId,
+    String? fromUserName,
+    String? toUserId,
+    String? toUserName,
   }) {
     return MaterialTransaction(
       id: id ?? this.id,
@@ -106,6 +126,12 @@ class MaterialTransaction {
       approvedAt: approvedAt ?? this.approvedAt,
       attachments: attachments ?? this.attachments,
       additionalData: additionalData ?? this.additionalData,
+      projectId: projectId ?? this.projectId,
+      projectName: projectName ?? this.projectName,
+      fromUserId: fromUserId ?? this.fromUserId,
+      fromUserName: fromUserName ?? this.fromUserName,
+      toUserId: toUserId ?? this.toUserId,
+      toUserName: toUserName ?? this.toUserName,
     );
   }
 
@@ -148,6 +174,12 @@ class MaterialTransaction {
           : null,
       attachments: List<String>.from(data['attachments'] ?? []),
       additionalData: Map<String, dynamic>.from(data['additionalData'] ?? {}),
+      projectId: data['projectId'],
+      projectName: data['projectName'],
+      fromUserId: data['fromUserId'],
+      fromUserName: data['fromUserName'],
+      toUserId: data['toUserId'],
+      toUserName: data['toUserName'],
     );
   }
 
@@ -174,6 +206,12 @@ class MaterialTransaction {
       'approvedAt': approvedAt?.millisecondsSinceEpoch,
       'attachments': attachments,
       'additionalData': additionalData,
+      if (projectId != null) 'projectId': projectId,
+      if (projectName != null) 'projectName': projectName,
+      if (fromUserId != null) 'fromUserId': fromUserId,
+      if (fromUserName != null) 'fromUserName': fromUserName,
+      if (toUserId != null) 'toUserId': toUserId,
+      if (toUserName != null) 'toUserName': toUserName,
     };
   }
 

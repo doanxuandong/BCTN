@@ -1,13 +1,39 @@
-Đề tài là: Xây dựng ứng dụng kết nối những người trong lĩnh vực xây dựng - BuilderConnect. 
-* Hiện tại app của tôi bị dánh giá là chưa thể hiện được tính "connect" và nghiệp vụ để khác biệt so với những app khác*
-* Nên tôi có làm vài chức năng nhưng cũng chưa liên kết lắm *
-1. Chức năng tìm kiếm thông minh: người dùng trả lời câu hỏi sau đó ra list tài khoản theo yêu cầu người dùng
-2. Ở tính năng chat thì đối với từng loại tài khoản sẽ có các tính năng mới để hỗ trợ chuyên sâu hơn về nghiệp vụ
-* Mong muốn *
-1. flow : người dùng thường vào tìm kiếm
-* nếu tìm kiếm nhà thiết kế thì vẫn như app hiện tại đang có, nếu như trao đổi với nhà thiết kế nào mà oke, thì sẽ có tính năng hợp tác, 
-và có thêm điểm gì đặc biệt để hiển thị trong list chat là người dùng đang hợp tác với nhà thiết kế đó
-* xong sau đó nếu chốt được các mẫu thiết kế thì sẽ có tính năng gửi thiết kế đó đến cho các tài khoản chủ thầu
-* chủ thầu nào oke với thiết kế đó sẽ click quan tâm và vào trao đổi với user thường, chủ thầu sẽ có 1 nghiệp vụ gì đó để gửi kế hoạch làm công trình theo thiết kế đó,
-nếu người dùng oke thì cũng sẽ có tính năng hợp tác. 
-* xong sau đó tiếp tục dùng bản kế hoạch của nhà thầu đó, và tiến hành gửi bản kế hoạch đó đến các tài khoản là cửa hàng vật liệu, nếu cửa hàng nào chốt giá được thì sẽ có tính năng hợp tác*
+Tóm tắt:
+Transaction liên kết với Project:
+Khi store thực hiện transaction (nhập/xuất) cho đối tác trong một dự án, cần lưu projectId vào transaction.
+MaterialTransaction cần thêm: projectId, projectName, fromUserId, fromUserName, toUserId, toUserName.
+Hiển thị rõ "từ ai sang ai":
+Khi store xuất kho cho owner/contractor trong project → lưu: fromUserId = store, toUserId = owner/contractor.
+Khi store nhập kho → lưu: fromUserId = supplier, toUserId = store.
+Contractor có thể xem quản lý:
+Contractor có quyền xem transactions của project mà họ tham gia (có contractorId trong pipeline).
+Cần filter transactions theo projectId và cho phép contractor xem.
+Contractor báo cáo sử dụng vật liệu:
+Thêm quick action "Báo cáo sử dụng vật liệu" trong _buildContractorActions (chỉ khi contractor và có pipeline).
+Contractor báo cáo: ngày nào, vật liệu gì, số lượng bao nhiêu.
+Báo cáo này gửi cho owner (chủ nhà) qua chat message.
+Cảnh báo vượt ngân sách:
+Tính tổng chi phí từ transactions có projectId = project.id và type = export (xuất kho).
+So sánh với materialsBudget trong ProjectPipeline.
+Hiển thị cảnh báo khi tổng chi phí > materialsBudget.
+Kế hoạch triển khai:
+Phase 1: Mở rộng MaterialTransaction model
+Thêm các trường: projectId, projectName, fromUserId, fromUserName, toUserId, toUserName vào MaterialTransaction.
+Cập nhật fromFirestore, toFirestore, copyWith.
+Phase 2: Cập nhật Transaction Service
+Cập nhật logic tạo transaction để lưu thông tin project và "từ ai sang ai".
+Thêm method để query transactions theo projectId.
+Thêm method để tính tổng chi phí của một project.
+Phase 3: Cập nhật UI cho Store
+Khi store thực hiện import/export, cho phép chọn project (nếu có pipeline liên kết).
+Tự động điền thông tin fromUserId, toUserId dựa trên project.
+Phase 4: Thêm quyền xem cho Contractor
+Thêm màn hình/quyền để contractor xem transactions của project họ tham gia.
+Filter transactions theo projectId và chỉ hiển thị cho contractor liên quan.
+Phase 5: Thêm tính năng báo cáo sử dụng vật liệu cho Contractor
+Thêm quick action "Báo cáo sử dụng vật liệu" trong _buildContractorActions.
+Tạo dialog/form để contractor nhập: ngày, vật liệu, số lượng.
+Gửi báo cáo qua chat message cho owner.
+Phase 6: Thêm cảnh báo vượt ngân sách
+Tính tổng chi phí từ transactions của project.
+So sánh với materialsBudget và hiển thị cảnh báo khi vượt.

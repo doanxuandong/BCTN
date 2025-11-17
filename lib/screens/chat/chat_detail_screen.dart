@@ -9,6 +9,10 @@ import '../../services/storage/file_storage_service.dart';
 import '../../services/user/user_session.dart';
 import '../../services/user/user_profile_service.dart';
 import '../../services/project/pipeline_service.dart';
+import '../../services/manage/transaction_service.dart';
+import '../../services/manage/material_service.dart';
+import '../../models/material_transaction.dart' as mt;
+import '../../models/construction_material.dart';
 import '../../components/message_bubble.dart';
 import '../profile/public_profile_screen.dart';
 
@@ -301,6 +305,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         widget.chatId,
         documentId: documentId,
       );
+
+      if (!mounted) return;
       setState(() {
         _messages = messages;
         _isLoading = false;
@@ -350,6 +356,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       });
     } catch (e) {
       print('❌ Error loading messages: $e');
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
@@ -550,12 +557,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           const SizedBox(width: 8),
           GestureDetector(
             onTap: _isSending ? null : _sendMessage,
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: _isSending ? Colors.grey : Colors.blue[700],
-                shape: BoxShape.circle,
-              ),
+            child: CircleAvatar(
+              radius: 22,
+              backgroundColor: _isSending ? Colors.grey : Colors.blue[700],
               child: _isSending
                   ? const SizedBox(
                       width: 16,
@@ -568,7 +572,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   : const Icon(
                       Icons.send,
                       color: Colors.white,
-                      size: 16,
+                      size: 18,
                     ),
             ),
           ),
@@ -975,6 +979,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             icon: Icons.palette,
             label: 'Xem Portfolio',
             onTap: () => _viewPortfolio(),
+          ),
+        // Phase 5 Enhancement: Button "Báo cáo sử dụng vật liệu" cho Contractor (chỉ khi có pipeline)
+        if (isCurrentUserContractor && hasPipeline)
+          _buildActionButton(
+            icon: Icons.report,
+            label: 'Báo cáo sử dụng vật liệu',
+            onTap: () => _showMaterialUsageReportDialog(),
           ),
         _buildActionButton(
           icon: Icons.timeline,
@@ -1947,9 +1958,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       child: CircularProgressIndicator(),
                     ))
                   else if (userProjects.isNotEmpty) ...[
-                    DropdownButtonFormField<String?>(
-                      value: selectedProjectId,
-                      isExpanded: true,
+                  DropdownButtonFormField<String?>(
+                    value: selectedProjectId,
+                    isExpanded: true,
                       decoration: const InputDecoration(
                         labelText: 'Chọn dự án (tùy chọn)',
                         hintText: 'Tạo mới',
@@ -2219,6 +2230,582 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   String _formatDate(DateTime date) {
     return '${date.day}/${date.month}/${date.year}';
+  }
+
+  // ==================== PHASE 5: MATERIAL USAGE REPORT DIALOG ====================
+  
+  /// Phase 5 Enhancement: Dialog để contractor báo cáo sử dụng vật liệu
+  Future<void> _showMaterialUsageReportDialog() async {
+    // Kiểm tra xem currentUser có phải là Contractor không
+    if (_currentUserAccountType != UserAccountType.contractor) {
+      _showSnackBar('Lỗi: Chỉ Contractor mới có thể báo cáo sử dụng vật liệu');
+      return;
+    }
+
+    // Load danh sách dự án mà contractor tham gia
+    final currentUser = await UserSession.getCurrentUser();
+    if (currentUser == null) {
+      _showSnackBar('Lỗi: Không thể lấy thông tin người dùng');
+      return;
+    }
+    final contractorId = currentUser['userId']?.toString();
+    if (contractorId == null) {
+      _showSnackBar('Lỗi: Không thể lấy ID người dùng');
+      return;
+    }
+    
+    List<ProjectPipeline> contractorProjects = [];
+    bool isLoadingProjects = true;
+    
+    try {
+      // Load tất cả projects và filter những project mà contractor tham gia
+      final allProjects = await PipelineService.getUserPipelines();
+      contractorProjects = allProjects.where((p) => 
+        p.contractorId == contractorId &&
+        p.constructionStatus != CollaborationStatus.none &&
+        p.constructionStatus != CollaborationStatus.cancelled
+      ).toList();
+    } catch (e) {
+      print('❌ Error loading contractor projects: $e');
+      _showSnackBar('Lỗi khi tải danh sách dự án');
+      return;
+    }
+    isLoadingProjects = false;
+
+    final materialNameController = TextEditingController();
+    final quantityController = TextEditingController();
+    final unitController = TextEditingController(text: 'm³'); // Default unit
+    final notesController = TextEditingController();
+    DateTime? usageDate;
+    
+    // QUAN TRỌNG: Các biến state phải được khai báo BÊN NGOÀI showDialog
+    // để chúng được preserve giữa các lần rebuild của StatefulBuilder
+    String? selectedProjectId;
+    // Nếu có pipeline hiện tại, chọn nó làm mặc định
+    if (_pipeline != null && contractorProjects.any((p) => p.id == _pipeline!.id)) {
+      selectedProjectId = _pipeline!.id;
+    }
+    
+    List<Map<String, dynamic>> projectMaterials = [];
+    bool isLoadingMaterials = false;
+    String? selectedMaterialName;
+    String? selectedMaterialUnit;
+
+    // Helper function để load materials cho một project
+    Future<void> loadMaterialsForProject(
+      String projectId,
+      void Function(void Function()) setDialogState,
+    ) async {
+      setDialogState(() {
+        isLoadingMaterials = true;
+      });
+      
+      try {
+        final contractorIdStr = currentUser['userId']?.toString();
+        if (contractorIdStr == null) {
+          setDialogState(() {
+            isLoadingMaterials = false;
+          });
+          return;
+        }
+        
+        // Lấy project info để có ownerId
+        final selectedProject = contractorProjects.firstWhere(
+          (p) => p.id == projectId,
+          orElse: () => contractorProjects.first,
+        );
+        final ownerId = selectedProject.ownerId;
+        
+        // Lấy transactions export có projectId và (toUserId = contractorId HOẶC toUserId = ownerId)
+        final transactions = await TransactionService.getTransactionsByProjectId(projectId);
+        
+        // Convert ownerId và contractorId sang String để so sánh
+        final ownerIdStr = ownerId.toString();
+        final contractorIdStrForCompare = contractorIdStr;
+        
+        print('🔍 Loading materials for project: $projectId');
+        print('  - contractorId: $contractorIdStrForCompare');
+        print('  - ownerId: $ownerIdStr');
+        print('  - Total transactions: ${transactions.length}');
+        
+        final exportTransactions = transactions.where((t) {
+          final isExport = t.type == mt.TransactionType.export;
+          final isCompleted = t.status == mt.TransactionStatus.completed;
+          final toUserIdStr = t.toUserId?.toString() ?? '';
+          final matchesContractor = toUserIdStr == contractorIdStrForCompare;
+          final matchesOwner = toUserIdStr == ownerIdStr;
+          final matches = matchesContractor || matchesOwner;
+          
+          if (isExport && isCompleted) {
+            print('  - Transaction: ${t.materialName}, toUserId: ${t.toUserId}, matchesContractor: $matchesContractor, matchesOwner: $matchesOwner, matches: $matches');
+          }
+          
+          return isExport && isCompleted && matches;
+        }).toList();
+        
+        print('  - Export transactions found: ${exportTransactions.length}');
+        
+        // Tạo map để lấy unique materials và tổng hợp số lượng
+        final Map<String, Map<String, dynamic>> materialsMap = {};
+        for (var txn in exportTransactions) {
+          final key = '${txn.materialName}_${txn.materialId}';
+          if (!materialsMap.containsKey(key)) {
+            // Lấy unit từ material service nếu có
+            String? materialUnit = 'cái';
+            double totalQuantity = 0;
+            try {
+              final material = await MaterialService.getById(txn.materialId);
+              if (material != null) {
+                materialUnit = material.unit.isNotEmpty ? material.unit : 'cái';
+              }
+            } catch (e) {
+              print('⚠️ Error getting material unit: $e');
+            }
+            
+            // Tổng hợp số lượng
+            totalQuantity = exportTransactions
+                .where((t) => t.materialId == txn.materialId && t.materialName == txn.materialName)
+                .fold(0.0, (sum, t) => sum + t.quantity);
+            
+            materialsMap[key] = {
+              'materialName': txn.materialName,
+              'materialId': txn.materialId,
+              'unit': materialUnit,
+              'totalQuantity': totalQuantity,
+              'ownerId': ownerId,
+            };
+            
+            print('  - Added material: ${txn.materialName}, quantity: $totalQuantity ${materialUnit}');
+          }
+        }
+        
+        print('  - Total unique materials: ${materialsMap.length}');
+        print('  - Materials list: ${materialsMap.values.map((m) => m['materialName']).toList()}');
+        
+        setDialogState(() {
+          projectMaterials = materialsMap.values.toList();
+          isLoadingMaterials = false;
+          print('  - ✅ Updated dialog state: projectMaterials.length = ${projectMaterials.length}');
+        });
+        
+        print('  - 🔍 After setState: projectMaterials.length = ${projectMaterials.length}');
+      } catch (e) {
+        print('❌ Error loading project materials: $e');
+        setDialogState(() {
+          isLoadingMaterials = false;
+        });
+      }
+    }
+
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          // Load materials cho selectedProjectId nếu có (chỉ chạy một lần khi dialog mở)
+          if (selectedProjectId != null && projectMaterials.isEmpty && !isLoadingMaterials) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              loadMaterialsForProject(selectedProjectId!, setDialogState);
+            });
+          }
+          
+          Widget projectSelector;
+          if (isLoadingProjects) {
+            projectSelector = const Center(
+              child: Padding(
+                padding: EdgeInsets.all(16.0),
+                child: CircularProgressIndicator(),
+              ),
+            );
+          } else if (contractorProjects.isEmpty) {
+            projectSelector = Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange[300]!),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.orange[700], size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Bạn chưa tham gia dự án nào. Vui lòng "Bắt đầu hợp tác" trước.',
+                      style: TextStyle(color: Colors.orange[900], fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          } else {
+            projectSelector = DropdownButtonFormField<String?>(
+              value: selectedProjectId,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Chọn dự án *',
+                hintText: 'Chọn dự án',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.folder_special),
+                helperText: 'Chọn dự án để xem danh sách vật liệu',
+              ),
+              items: contractorProjects.map((project) {
+                return DropdownMenuItem(
+                  value: project.id,
+                  child: Text(
+                    project.projectName,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                );
+              }).toList(),
+              onChanged: (v) async {
+                setDialogState(() {
+                  selectedProjectId = v;
+                  selectedMaterialName = null;
+                  selectedMaterialUnit = null;
+                  materialNameController.clear();
+                  unitController.clear();
+                  projectMaterials = [];
+                });
+                
+                if (v != null) {
+                  await loadMaterialsForProject(v, setDialogState);
+                }
+              },
+            );
+          }
+
+          return AlertDialog(
+            title: const Text('Báo cáo sử dụng vật liệu'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Chọn dự án
+                  projectSelector,
+                  const SizedBox(height: 16),
+                  // Chọn ngày sử dụng
+                  InkWell(
+                    onTap: () async {
+                      final date = await showDatePicker(
+                        context: context,
+                        initialDate: DateTime.now(),
+                        firstDate: DateTime.now().subtract(const Duration(days: 365)),
+                        lastDate: DateTime.now(),
+                      );
+                      if (date != null) {
+                        setDialogState(() {
+                          usageDate = date;
+                        });
+                      }
+                    },
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Ngày sử dụng *',
+                        border: OutlineInputBorder(),
+                        suffixIcon: Icon(Icons.calendar_today),
+                      ),
+                      child: Text(
+                        usageDate != null
+                            ? '${usageDate!.day}/${usageDate!.month}/${usageDate!.year}'
+                            : 'Chọn ngày',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Tên vật liệu - Dropdown từ danh sách vật liệu trong dự án
+                  if (selectedProjectId == null)
+                    TextField(
+                      controller: materialNameController,
+                      enabled: false,
+                      decoration: const InputDecoration(
+                        labelText: 'Tên vật liệu *',
+                        hintText: 'Vui lòng chọn dự án trước',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.inventory),
+                        helperText: 'Chọn dự án để xem danh sách vật liệu',
+                      ),
+                    )
+                  else if (isLoadingMaterials)
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(8.0),
+                        child: CircularProgressIndicator(),
+                      ),
+                    )
+                  else if (projectMaterials.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.blue[300]!),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline, color: Colors.blue[700], size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Dự án này chưa có vật liệu. Vui lòng liên hệ store để nhận vật liệu.',
+                              style: TextStyle(color: Colors.blue[900], fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    DropdownButtonFormField<String?>(
+                      value: selectedMaterialName,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Tên vật liệu *',
+                        hintText: 'Chọn vật liệu',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.inventory),
+                        helperText: 'Chọn vật liệu có trong dự án',
+                      ),
+                      items: projectMaterials.map((material) {
+                        return DropdownMenuItem(
+                          value: material['materialName'] as String,
+                          child: Text(
+                            material['materialName'] as String,
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (v) {
+                        final material = projectMaterials.firstWhere(
+                          (m) => m['materialName'] == v,
+                          orElse: () => {},
+                        );
+                        
+                        setDialogState(() {
+                          selectedMaterialName = v;
+                          selectedMaterialUnit = material['unit'] as String? ?? 'cái';
+                          materialNameController.text = v ?? '';
+                          unitController.text = selectedMaterialUnit ?? '';
+                        });
+                      },
+                    ),
+                  const SizedBox(height: 16),
+                  // Số lượng và đơn vị
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: TextField(
+                          controller: quantityController,
+                          decoration: const InputDecoration(
+                            labelText: 'Số lượng *',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.numbers),
+                          ),
+                          keyboardType: TextInputType.number,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: unitController,
+                          decoration: const InputDecoration(
+                            labelText: 'Đơn vị',
+                            hintText: 'm³, kg, bao...',
+                            border: OutlineInputBorder(),
+                          ),
+                          enabled: selectedMaterialName != null, // Disable nếu chưa chọn vật liệu
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  // Ghi chú
+                  TextField(
+                    controller: notesController,
+                    decoration: const InputDecoration(
+                      labelText: 'Ghi chú',
+                      hintText: 'Ghi chú thêm (tùy chọn)',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.note),
+                    ),
+                    maxLines: 3,
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Hủy'),
+              ),
+              ElevatedButton(
+                onPressed: (usageDate == null ||
+                        selectedProjectId == null ||
+                        selectedMaterialName == null ||
+                        materialNameController.text.isEmpty ||
+                        quantityController.text.isEmpty)
+                    ? null
+                    : () async {
+                      final quantity = double.tryParse(quantityController.text);
+                      if (quantity == null || quantity <= 0) {
+                        _showSnackBar('Số lượng phải lớn hơn 0');
+                        return;
+                      }
+                      
+                      // Lấy thông tin material và owner từ projectMaterials
+                      final selectedMaterial = projectMaterials.firstWhere(
+                        (m) => m['materialName'] == selectedMaterialName,
+                        orElse: () => {},
+                      );
+                      
+                      if (selectedMaterial.isEmpty) {
+                        _showSnackBar('Lỗi: Không tìm thấy thông tin vật liệu');
+                        return;
+                      }
+                      
+                      final materialId = selectedMaterial['materialId'] as String?;
+                      final ownerId = selectedMaterial['ownerId'] as String?;
+                      
+                      if (materialId == null || ownerId == null) {
+                        _showSnackBar('Lỗi: Thiếu thông tin vật liệu hoặc chủ dự án');
+                        return;
+                      }
+                      
+                      // Kiểm tra số lượng có trong kho của owner
+                      try {
+                        final ownerMaterials = await MaterialService.getByUserId(ownerId);
+                        final ownerMaterial = ownerMaterials.firstWhere(
+                          (m) => m.id == materialId || 
+                                 (m.name.toLowerCase() == selectedMaterialName!.toLowerCase()),
+                          orElse: () => ownerMaterials.firstWhere(
+                            (m) => m.name.toLowerCase() == selectedMaterialName!.toLowerCase(),
+                            orElse: () => ConstructionMaterial(
+                              id: '',
+                              userId: ownerId,
+                              name: '',
+                              category: '',
+                              unit: '',
+                              currentStock: 0,
+                              minStock: 0,
+                              maxStock: 0,
+                              price: 0,
+                              supplier: '',
+                              description: '',
+                              lastUpdated: DateTime.now(),
+                            ),
+                          ),
+                        );
+                        
+                        if (ownerMaterial.id.isEmpty) {
+                          _showSnackBar('Lỗi: Không tìm thấy vật liệu trong kho của chủ dự án');
+                          return;
+                        }
+                        
+                        if (ownerMaterial.currentStock < quantity) {
+                          _showSnackBar('Lỗi: Số lượng trong kho (${ownerMaterial.currentStock}) không đủ. Vui lòng chọn số lượng nhỏ hơn.');
+                          return;
+                        }
+                      } catch (e) {
+                        print('⚠️ Error checking owner material stock: $e');
+                        // Tiếp tục nếu không kiểm tra được (có thể do lỗi network)
+                      }
+                      
+                      // Gửi báo cáo
+                      final messageId = await BusinessChatService.sendMaterialUsageReport(
+                        chatId: widget.chatId,
+                        usageDate: usageDate!,
+                        materialName: materialNameController.text.trim(),
+                        quantity: quantity,
+                        unit: unitController.text.trim().isEmpty
+                            ? null
+                            : unitController.text.trim(),
+                        notes: notesController.text.trim().isEmpty
+                            ? null
+                            : notesController.text.trim(),
+                        projectId: selectedProjectId, // Sử dụng projectId đã chọn
+                      );
+
+                      if (messageId != null) {
+                        // Phase 2: Tạo transaction để trừ vật liệu khỏi kho của owner
+                        try {
+                          // Lấy thông tin owner material và project
+                          final ownerMaterials = await MaterialService.getByUserId(ownerId);
+                          final ownerMaterial = ownerMaterials.firstWhere(
+                            (m) => m.id == materialId || 
+                                   (m.name.toLowerCase() == selectedMaterialName!.toLowerCase()),
+                            orElse: () => ownerMaterials.firstWhere(
+                              (m) => m.name.toLowerCase() == selectedMaterialName!.toLowerCase(),
+                              orElse: () => ownerMaterials.first,
+                            ),
+                          );
+                          
+                          if (ownerMaterial.id.isNotEmpty) {
+                            final selectedProject = contractorProjects.firstWhere(
+                              (p) => p.id == selectedProjectId,
+                              orElse: () => contractorProjects.first,
+                            );
+                            
+                            final contractorName = currentUser['name']?.toString() ?? 'Contractor';
+                            
+                            // Tạo transaction để trừ vật liệu từ kho owner
+                            final usageTransaction = mt.MaterialTransaction(
+                              id: '', // Will be set by Firestore
+                              materialId: ownerMaterial.id,
+                              materialName: selectedMaterialName!,
+                              userId: ownerId, // Owner là người sở hữu kho
+                              type: mt.TransactionType.export, // Export từ kho owner
+                              status: mt.TransactionStatus.completed,
+                              quantity: quantity,
+                              unitPrice: ownerMaterial.price,
+                              totalAmount: ownerMaterial.price * quantity,
+                              supplier: contractorName, // Contractor sử dụng
+                              reason: 'Sử dụng cho dự án - Báo cáo từ contractor',
+                              note: notesController.text.trim().isEmpty 
+                                  ? 'Báo cáo sử dụng từ contractor'
+                                  : notesController.text.trim(),
+                              description: 'Contractor báo cáo sử dụng vật liệu cho dự án: ${selectedProject.projectName}',
+                              transactionDate: usageDate!,
+                              createdAt: DateTime.now(),
+                              lastUpdated: DateTime.now(),
+                              createdBy: currentUser['userId']?.toString() ?? '',
+                              projectId: selectedProjectId,
+                              projectName: selectedProject.projectName,
+                              fromUserId: ownerId, // Từ kho owner
+                              fromUserName: selectedProject.ownerId == ownerId 
+                                  ? selectedProject.projectName 
+                                  : 'Chủ dự án',
+                              toUserId: currentUser['userId']?.toString(), // Contractor sử dụng
+                              toUserName: contractorName,
+                            );
+                            
+                            // Tạo transaction (tự động trừ stock trong _updateMaterialStock)
+                            await TransactionService.createTransaction(usageTransaction);
+                            
+                            print('✅ Đã tạo transaction và trừ ${quantity} ${selectedMaterialUnit ?? "đơn vị"} vật liệu khỏi kho của owner');
+                          }
+                        } catch (e) {
+                          print('⚠️ Error creating usage transaction: $e');
+                          // Vẫn hiển thị thành công nếu message đã gửi, chỉ log lỗi
+                        }
+                        
+                        if (mounted) {
+                          Navigator.pop(context);
+                          await _loadMessages();
+                          _showSnackBar('Đã gửi báo cáo và trừ vật liệu khỏi kho');
+                        }
+                      } else {
+                        _showSnackBar('Lỗi khi gửi báo cáo');
+                      }
+                    },
+                child: const Text('Gửi báo cáo'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   // ==================== PIPELINE STATUS PANEL ====================

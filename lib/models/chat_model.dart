@@ -161,6 +161,8 @@ class Message {
 }
 
 enum MessageType {
+  // Phase 5 Enhancement: Material usage report
+  materialUsageReport, // Báo cáo sử dụng vật liệu
   text,
   image,
   file,

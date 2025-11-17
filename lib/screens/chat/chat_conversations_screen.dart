@@ -289,7 +289,7 @@ class _ChatConversationsScreenState extends State<ChatConversationsScreen> with 
                     ),
                 ],
               ),
-              onTap: () {
+              onTap: () { 
                 Navigator.push(
                   context,
                   MaterialPageRoute(

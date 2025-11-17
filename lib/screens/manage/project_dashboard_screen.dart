@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import '../../models/project_pipeline.dart';
 import '../../services/project/pipeline_service.dart';
 import '../../services/project/completed_project_service.dart';
+import '../../services/manage/transaction_service.dart';
 import '../../services/user/user_session.dart';
 import '../chat/chat_detail_screen.dart';
 import 'create_project_screen.dart';
+import 'project_transactions_screen.dart';
+import 'project_materials_screen.dart';
 
 class ProjectDashboardScreen extends StatefulWidget {
   const ProjectDashboardScreen({super.key});
@@ -17,6 +20,8 @@ class _ProjectDashboardScreenState extends State<ProjectDashboardScreen> {
   List<ProjectPipeline> _pipelines = [];
   bool _isLoading = true;
   String? _currentUserId; // Cache current user ID để kiểm tra owner
+  // Phase 6 Enhancement: Cache project costs để tránh tính toán lại nhiều lần
+  Map<String, double> _projectCosts = {}; // projectId -> totalCost
 
   @override
   void initState() {
@@ -53,8 +58,24 @@ class _ProjectDashboardScreenState extends State<ProjectDashboardScreen> {
         print('    OwnerId: ${pipeline.ownerId}');
       }
       
+      // Phase 6 Enhancement: Load project costs for budget warnings
+      final projectCosts = <String, double>{};
+      for (var pipeline in pipelines) {
+        // Chỉ tính cost nếu có materialsBudget
+        if (pipeline.materialsBudget != null && pipeline.materialsBudget! > 0) {
+          try {
+            final totalCost = await TransactionService.getProjectTotalCost(pipeline.id);
+            projectCosts[pipeline.id] = totalCost;
+            print('  - Project ${pipeline.projectName}: Total cost = ${totalCost.toStringAsFixed(0)}, Budget = ${pipeline.materialsBudget}');
+          } catch (e) {
+            print('⚠️ Error calculating cost for project ${pipeline.id}: $e');
+          }
+        }
+      }
+      
       setState(() {
         _pipelines = pipelines;
+        _projectCosts = projectCosts;
         _isLoading = false;
       });
     } catch (e) {
@@ -218,8 +239,188 @@ class _ProjectDashboardScreenState extends State<ProjectDashboardScreen> {
               _buildProgressIndicator(pipeline),
               const SizedBox(height: 16),
               _buildCollaborators(pipeline),
+              const SizedBox(height: 16),
+              // Phase 6 Enhancement: Budget warning
+              _buildBudgetWarning(pipeline),
+              const SizedBox(height: 16),
+              // Phase 7 Enhancement: Button to view project materials
+              _buildViewMaterialsButton(pipeline),
+              const SizedBox(height: 12),
+              // Phase 4 Enhancement: Button to view project transactions
+              _buildViewTransactionsButton(pipeline),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  // Phase 6 Enhancement: Build budget warning widget
+  Widget _buildBudgetWarning(ProjectPipeline pipeline) {
+    // Chỉ hiển thị cảnh báo nếu có materialsBudget
+    if (pipeline.materialsBudget == null || pipeline.materialsBudget! <= 0) {
+      return const SizedBox.shrink();
+    }
+
+    final totalCost = _projectCosts[pipeline.id] ?? 0;
+    final budget = pipeline.materialsBudget!;
+    final percentage = budget > 0 ? (totalCost / budget) * 100 : 0;
+    final isOverBudget = totalCost > budget;
+
+    // Chỉ hiển thị cảnh báo nếu vượt quá 80% ngân sách hoặc vượt quá ngân sách
+    if (percentage < 80 && !isOverBudget) {
+      return const SizedBox.shrink();
+    }
+
+    Color warningColor;
+    IconData warningIcon;
+    String warningText;
+
+    if (isOverBudget) {
+      warningColor = Colors.red;
+      warningIcon = Icons.warning;
+      warningText = '⚠️ VƯỢT QUÁ NGÂN SÁCH!';
+    } else if (percentage >= 90) {
+      warningColor = Colors.orange;
+      warningIcon = Icons.warning_amber;
+      warningText = '⚠️ GẦN VƯỢT NGÂN SÁCH';
+    } else {
+      warningColor = Colors.orange[700]!;
+      warningIcon = Icons.info_outline;
+      warningText = 'ℹ️ Đã sử dụng ${percentage.toStringAsFixed(1)}% ngân sách';
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: warningColor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: warningColor, width: 1.5),
+      ),
+      child: Row(
+        children: [
+          Icon(warningIcon, color: warningColor, size: 24),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  warningText,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: warningColor,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Đã chi: ${_formatPrice(totalCost)} / Ngân sách: ${_formatPrice(budget)}',
+                  style: TextStyle(
+                    color: warningColor.withOpacity(0.8),
+                    fontSize: 12,
+                  ),
+                ),
+                if (isOverBudget)
+                  Text(
+                    'Vượt quá: ${_formatPrice(totalCost - budget)}',
+                    style: TextStyle(
+                      color: warningColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatPrice(double price) {
+    if (price >= 1000000000) {
+      return '${(price / 1000000000).toStringAsFixed(2)}B VNĐ';
+    } else if (price >= 1000000) {
+      return '${(price / 1000000).toStringAsFixed(2)}M VNĐ';
+    } else if (price >= 1000) {
+      return '${(price / 1000).toStringAsFixed(2)}K VNĐ';
+    } else {
+      return '${price.toStringAsFixed(0)} VNĐ';
+    }
+  }
+
+  // Phase 7 Enhancement: Button to view project materials (for contractor/owner/store)
+  Widget _buildViewMaterialsButton(ProjectPipeline pipeline) {
+    // Chỉ hiển thị nếu có store (có thể có vật liệu)
+    if (pipeline.storeId == null) {
+      return const SizedBox.shrink();
+    }
+    
+    // Kiểm tra xem currentUser có phải là owner, contractor, hoặc store không
+    final isOwner = _currentUserId != null && pipeline.ownerId == _currentUserId;
+    final isContractor = _currentUserId != null && pipeline.contractorId == _currentUserId;
+    final isStore = _currentUserId != null && pipeline.storeId == _currentUserId;
+    
+    // Chỉ hiển thị cho owner, contractor, hoặc store
+    if (!isOwner && !isContractor && !isStore) {
+      return const SizedBox.shrink();
+    }
+    
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ProjectMaterialsScreen(project: pipeline),
+            ),
+          );
+        },
+        icon: const Icon(Icons.inventory_2),
+        label: const Text('Xem vật liệu trong dự án'),
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          side: BorderSide(color: Colors.green[400]!),
+        ),
+      ),
+    );
+  }
+
+  // Phase 4 Enhancement: Button to view project transactions (for contractor/owner)
+  Widget _buildViewTransactionsButton(ProjectPipeline pipeline) {
+    // Chỉ hiển thị nếu có store (có thể có transactions)
+    if (pipeline.storeId == null) {
+      return const SizedBox.shrink();
+    }
+    
+    // Kiểm tra xem currentUser có phải là owner, contractor, hoặc store không
+    final isOwner = _currentUserId != null && pipeline.ownerId == _currentUserId;
+    final isContractor = _currentUserId != null && pipeline.contractorId == _currentUserId;
+    final isStore = _currentUserId != null && pipeline.storeId == _currentUserId;
+    
+    // Chỉ hiển thị cho owner, contractor, hoặc store
+    if (!isOwner && !isContractor && !isStore) {
+      return const SizedBox.shrink();
+    }
+    
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ProjectTransactionsScreen(project: pipeline),
+            ),
+          );
+        },
+        icon: const Icon(Icons.receipt_long),
+        label: const Text('Xem giao dịch vật liệu'),
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          side: BorderSide(color: Colors.blue[400]!),
         ),
       ),
     );

@@ -291,6 +291,53 @@ class BusinessChatService {
     }
   }
 
+  /// Phase 5 Enhancement: Gửi báo cáo sử dụng vật liệu (cho contractor)
+  static Future<String?> sendMaterialUsageReport({
+    required String chatId,
+    required DateTime usageDate,
+    required String materialName,
+    required double quantity,
+    String? unit,
+    String? notes,
+    String? projectId, // Link với project nếu có
+  }) async {
+    try {
+      final businessData = {
+        'usageDate': usageDate.millisecondsSinceEpoch,
+        'materialName': materialName,
+        'quantity': quantity,
+        if (unit != null) 'unit': unit,
+        if (notes != null) 'notes': notes,
+        if (projectId != null) 'projectId': projectId,
+      };
+
+      String content = '📋 Báo cáo sử dụng vật liệu';
+      content += '\nNgày: ${_formatDate(usageDate)}';
+      content += '\nVật liệu: $materialName';
+      content += '\nSố lượng: $quantity${unit != null ? ' $unit' : ''}';
+      if (notes != null && notes.isNotEmpty) {
+        content += '\nGhi chú: $notes';
+      }
+
+      final messageId = await ChatService.sendMessage(
+        chatId: chatId,
+        content: content,
+        type: MessageType.materialUsageReport,
+      );
+
+      if (messageId != null) {
+        await _firestore.collection('messages').doc(messageId).update({
+          'businessData': businessData,
+        });
+      }
+
+      return messageId;
+    } catch (e) {
+      print('❌ Error sending material usage report: $e');
+      return null;
+    }
+  }
+
   /// Gửi yêu cầu hẹn gặp
   static Future<String?> sendAppointmentRequest({
     required String chatId,

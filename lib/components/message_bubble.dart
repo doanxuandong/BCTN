@@ -105,6 +105,8 @@ class MessageBubble extends StatelessWidget {
         return _buildTimelineMessage();
       case MessageType.materialCatalog:
         return _buildMaterialCatalogMessage();
+      case MessageType.materialUsageReport:
+        return _buildMaterialUsageReportMessage();
       case MessageType.appointmentRequest:
       case MessageType.appointmentConfirm:
         return _buildAppointmentMessage();
@@ -823,6 +825,174 @@ class MessageBubble extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMaterialUsageReportMessage() {
+    final businessData = message.businessData ?? {};
+    final usageDate = businessData['usageDate'] as int?;
+    final materialName = businessData['materialName'] as String?;
+    final quantity = businessData['quantity'] as double?;
+    final unit = businessData['unit'] as String?;
+    final notes = businessData['notes'] as String?;
+
+    final date = usageDate != null
+        ? DateTime.fromMillisecondsSinceEpoch(usageDate)
+        : null;
+
+    return Builder(
+      builder: (context) => Container(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.75,
+        ),
+        decoration: BoxDecoration(
+          color: message.isFromMe ? Colors.indigo[600] : Colors.grey[200],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: message.isFromMe ? Colors.indigo[700]! : Colors.grey[300]!,
+            width: 1.5,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: message.isFromMe ? Colors.indigo[700] : Colors.grey[300],
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(12),
+                  topRight: Radius.circular(12),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.report,
+                    color: message.isFromMe ? Colors.white : Colors.grey[700],
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Báo cáo sử dụng vật liệu',
+                      style: TextStyle(
+                        color: message.isFromMe ? Colors.white : Colors.grey[700],
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Content
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (date != null) ...[
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.calendar_today,
+                          size: 14,
+                          color: message.isFromMe ? Colors.white70 : Colors.grey[600],
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _formatDate(date),
+                          style: TextStyle(
+                            color: message.isFromMe ? Colors.white70 : Colors.grey[600],
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  if (materialName != null) ...[
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.inventory,
+                          size: 14,
+                          color: message.isFromMe ? Colors.white70 : Colors.grey[600],
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            materialName,
+                            style: TextStyle(
+                              color: message.isFromMe ? Colors.white : Colors.black87,
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  if (quantity != null) ...[
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.scale,
+                          size: 14,
+                          color: message.isFromMe ? Colors.white70 : Colors.grey[600],
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Số lượng: ${quantity.toStringAsFixed(2)}${unit != null ? ' $unit' : ''}',
+                          style: TextStyle(
+                            color: message.isFromMe ? Colors.white70 : Colors.black87,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  if (notes != null && notes.isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: message.isFromMe
+                            ? Colors.indigo[700]!.withOpacity(0.3)
+                            : Colors.grey[100],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.note,
+                            size: 14,
+                            color: message.isFromMe ? Colors.white70 : Colors.grey[600],
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              notes,
+                              style: TextStyle(
+                                color: message.isFromMe ? Colors.white70 : Colors.black87,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
