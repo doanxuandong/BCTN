@@ -43,7 +43,10 @@ class _ProjectMaterialsScreenState extends State<ProjectMaterialsScreen> {
       print('  - contractorId: $contractorIdStr');
       print('  - Total transactions: ${transactions.length}');
       
-      final exportTransactions = transactions.where((t) {
+      // Phân loại transactions export thành 2 nhóm:
+      // 1. Transactions NHẬN VẬT LIỆU vào dự án (từ store/owner → contractor/owner)
+      // 2. Transactions BÁO CÁO SỬ DỤNG (contractor báo đã dùng) - cần TRỪ đi
+      final allExportTransactions = transactions.where((t) {
         final isExport = t.type == mt.TransactionType.export;
         final isCompleted = t.status == mt.TransactionStatus.completed;
         final toUserIdStr = t.toUserId?.toString() ?? '';
@@ -51,49 +54,138 @@ class _ProjectMaterialsScreenState extends State<ProjectMaterialsScreen> {
         final matchesContractor = contractorIdStr.isNotEmpty && toUserIdStr == contractorIdStr;
         final matches = matchesOwner || matchesContractor;
         
-        if (isExport && isCompleted) {
-          print('  - Transaction: ${t.materialName}, toUserId: ${t.toUserId}, matchesOwner: $matchesOwner, matchesContractor: $matchesContractor, matches: $matches');
-        }
-        
         return isExport && isCompleted && matches;
       }).toList();
       
-      print('  - Export transactions found: ${exportTransactions.length}');
+      // Phân biệt transactions báo cáo sử dụng (có reason/note/description chứa "báo cáo")
+      final usageReportTransactions = allExportTransactions.where((t) {
+        final reason = (t.reason ?? '').toLowerCase();
+        final note = (t.note ?? '').toLowerCase();
+        final description = (t.description ?? '').toLowerCase();
+        return reason.contains('báo cáo') || 
+               note.contains('báo cáo sử dụng') || 
+               description.contains('báo cáo sử dụng');
+      }).toList();
+      
+      // Transactions nhận vật liệu = tất cả export - báo cáo sử dụng
+      final receivedTransactions = allExportTransactions.where((t) {
+        final reason = (t.reason ?? '').toLowerCase();
+        final note = (t.note ?? '').toLowerCase();
+        final description = (t.description ?? '').toLowerCase();
+        return !(reason.contains('báo cáo') || 
+                 note.contains('báo cáo sử dụng') || 
+                 description.contains('báo cáo sử dụng'));
+      }).toList();
+      
+      print('  - Total export transactions: ${allExportTransactions.length}');
+      print('  - Received transactions (nhận vật liệu): ${receivedTransactions.length}');
+      print('  - Usage report transactions (báo cáo sử dụng): ${usageReportTransactions.length}');
       
       // Tạo map để tổng hợp vật liệu
+      // QUAN TRỌNG: Group theo materialName đã normalize để tránh trùng lặp
+      // Tính số lượng CÒN LẠI = Tổng đã NHẬN - Tổng đã SỬ DỤNG
       final Map<String, Map<String, dynamic>> materialsMap = {};
       
-      for (var txn in exportTransactions) {
-        final key = '${txn.materialName}_${txn.materialId}';
+      // Lấy danh sách tất cả materialNames unique từ cả 2 nhóm transactions
+      final allMaterialNames = <String>{};
+      for (var txn in allExportTransactions) {
+        allMaterialNames.add(txn.materialName.trim().toLowerCase());
+      }
+      
+      for (var normalizedName in allMaterialNames) {
+        // Tổng số lượng ĐÃ NHẬN (từ receivedTransactions)
+        final receivedSameName = receivedTransactions.where((t) => 
+          t.materialName.trim().toLowerCase() == normalizedName
+        ).toList();
+        double totalReceived = receivedSameName.fold(0.0, (sum, t) => sum + t.quantity);
         
-        if (!materialsMap.containsKey(key)) {
-          // Lấy thông tin chi tiết vật liệu
+        // Tổng số lượng ĐÃ SỬ DỤNG (từ usageReportTransactions)
+        final usedSameName = usageReportTransactions.where((t) => 
+          t.materialName.trim().toLowerCase() == normalizedName
+        ).toList();
+        double totalUsed = usedSameName.fold(0.0, (sum, t) => sum + t.quantity);
+        
+        // Số lượng CÒN LẠI = Đã nhận - Đã sử dụng
+        double remainingQuantity = totalReceived - totalUsed;
+        
+        // Chỉ hiển thị vật liệu có số lượng > 0 (còn lại trong dự án)
+        if (remainingQuantity > 0) {
+          // Lấy transaction đầu tiên để lấy thông tin chi tiết
+          final firstTxn = receivedSameName.isNotEmpty 
+              ? receivedSameName.first 
+              : allExportTransactions.firstWhere(
+                  (t) => t.materialName.trim().toLowerCase() == normalizedName,
+                );
+          
+          // Lấy materialId và thông tin chi tiết từ material service
+          // Ưu tiên lấy từ owner's materials để đảm bảo consistency
+          String? materialId;
           String? materialUnit = 'cái';
-          double? materialPrice = txn.unitPrice;
+          double? materialPrice = firstTxn.unitPrice;
           
           try {
-            final material = await MaterialService.getById(txn.materialId);
-            if (material != null) {
-              materialUnit = material.unit.isNotEmpty ? material.unit : 'cái';
-              materialPrice = material.price;
+            // Tìm material trong kho owner dựa trên materialName
+            final ownerMaterials = await MaterialService.getByUserId(widget.project.ownerId);
+            final ownerMaterial = ownerMaterials.firstWhere(
+              (m) => m.name.trim().toLowerCase() == normalizedName,
+              orElse: () => ownerMaterials.firstWhere(
+                (m) => m.id == firstTxn.materialId,
+                orElse: () => ownerMaterials.firstWhere(
+                  (m) => m.name.toLowerCase().contains(normalizedName) || 
+                         normalizedName.contains(m.name.toLowerCase()),
+                  orElse: () => ownerMaterials.first,
+                ),
+              ),
+            );
+            
+            if (ownerMaterial.id.isNotEmpty) {
+              materialId = ownerMaterial.id;
+              materialUnit = ownerMaterial.unit.isNotEmpty ? ownerMaterial.unit : 'cái';
+              materialPrice = ownerMaterial.price;
+            } else {
+              // Fallback: dùng materialId từ transaction đầu tiên
+              materialId = firstTxn.materialId;
+              try {
+                final material = await MaterialService.getById(firstTxn.materialId);
+                if (material != null) {
+                  materialUnit = material.unit.isNotEmpty ? material.unit : 'cái';
+                  materialPrice = material.price;
+                }
+              } catch (e) {
+                print('⚠️ Error getting material details: $e');
+              }
             }
           } catch (e) {
-            print('⚠️ Error getting material details: $e');
+            print('⚠️ Error getting owner material: $e');
+            // Fallback: dùng materialId từ transaction đầu tiên
+            materialId = firstTxn.materialId;
+            try {
+              final material = await MaterialService.getById(firstTxn.materialId);
+              if (material != null) {
+                materialUnit = material.unit.isNotEmpty ? material.unit : 'cái';
+                materialPrice = material.price;
+              }
+            } catch (e2) {
+              print('⚠️ Error getting material details: $e2');
+            }
           }
           
-          // Tính tổng số lượng đã nhận
-          final totalQuantity = exportTransactions
-              .where((t) => t.materialId == txn.materialId && t.materialName == txn.materialName)
-              .fold(0.0, (sum, t) => sum + t.quantity);
+          // Lấy materialName gốc từ transaction đầu tiên (giữ nguyên format)
+          final originalMaterialName = firstTxn.materialName;
           
-          materialsMap[key] = {
-            'materialName': txn.materialName,
-            'materialId': txn.materialId,
+          materialsMap[normalizedName] = {
+            'materialName': originalMaterialName,
+            'materialId': materialId ?? firstTxn.materialId,
             'unit': materialUnit,
-            'price': materialPrice ?? txn.unitPrice,
-            'totalQuantity': totalQuantity,
+            'price': materialPrice ?? firstTxn.unitPrice,
+            'totalQuantity': remainingQuantity, // Số lượng CÒN LẠI
             'ownerId': widget.project.ownerId,
           };
+          
+          print('  - Material: $originalMaterialName (normalized: $normalizedName)');
+          print('    - Đã nhận: $totalReceived ${materialUnit}');
+          print('    - Đã sử dụng: $totalUsed ${materialUnit}');
+          print('    - Còn lại: $remainingQuantity ${materialUnit}');
         }
       }
       

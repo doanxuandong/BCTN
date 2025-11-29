@@ -2288,6 +2288,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     
     List<Map<String, dynamic>> projectMaterials = [];
     bool isLoadingMaterials = false;
+    String? selectedMaterialKey;   // key duy nhất cho dropdown (materialId|materialName)
     String? selectedMaterialName;
     String? selectedMaterialUnit;
 
@@ -2346,36 +2347,83 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         print('  - Export transactions found: ${exportTransactions.length}');
         
         // Tạo map để lấy unique materials và tổng hợp số lượng
+        // QUAN TRỌNG: Group theo materialName đã normalize để tránh trùng lặp
+        // khi transaction mới có materialId khác nhưng cùng materialName
         final Map<String, Map<String, dynamic>> materialsMap = {};
         for (var txn in exportTransactions) {
-          final key = '${txn.materialName}_${txn.materialId}';
+          // Normalize materialName để group (trim, lowercase)
+          final normalizedName = txn.materialName.trim().toLowerCase();
+          final key = normalizedName;
+          
           if (!materialsMap.containsKey(key)) {
-            // Lấy unit từ material service nếu có
+            // Tổng hợp số lượng từ TẤT CẢ transactions có cùng materialName (bất kể materialId)
+            final sameNameTransactions = exportTransactions.where((t) => 
+              t.materialName.trim().toLowerCase() == normalizedName
+            ).toList();
+            
+            double totalQuantity = sameNameTransactions.fold(0.0, (sum, t) => sum + t.quantity);
+            
+            // Lấy materialId và unit từ material service dựa trên materialName
+            // Ưu tiên lấy từ owner's materials để đảm bảo consistency
+            String? materialId;
             String? materialUnit = 'cái';
-            double totalQuantity = 0;
+            
             try {
-              final material = await MaterialService.getById(txn.materialId);
-              if (material != null) {
-                materialUnit = material.unit.isNotEmpty ? material.unit : 'cái';
+              // Tìm material trong kho owner dựa trên materialName
+              final ownerMaterials = await MaterialService.getByUserId(ownerId);
+              final ownerMaterial = ownerMaterials.firstWhere(
+                (m) => m.name.trim().toLowerCase() == normalizedName,
+                orElse: () => ownerMaterials.firstWhere(
+                  (m) => m.id == txn.materialId,
+                  orElse: () => ownerMaterials.firstWhere(
+                    (m) => m.name.toLowerCase().contains(normalizedName) || 
+                           normalizedName.contains(m.name.toLowerCase()),
+                    orElse: () => ownerMaterials.first,
+                  ),
+                ),
+              );
+              
+              if (ownerMaterial.id.isNotEmpty) {
+                materialId = ownerMaterial.id;
+                materialUnit = ownerMaterial.unit.isNotEmpty ? ownerMaterial.unit : 'cái';
+              } else {
+                // Fallback: dùng materialId từ transaction đầu tiên
+                materialId = txn.materialId;
+                try {
+                  final material = await MaterialService.getById(txn.materialId);
+                  if (material != null) {
+                    materialUnit = material.unit.isNotEmpty ? material.unit : 'cái';
+                  }
+                } catch (e) {
+                  print('⚠️ Error getting material unit: $e');
+                }
               }
             } catch (e) {
-              print('⚠️ Error getting material unit: $e');
+              print('⚠️ Error getting owner material: $e');
+              // Fallback: dùng materialId từ transaction đầu tiên
+              materialId = txn.materialId;
+              try {
+                final material = await MaterialService.getById(txn.materialId);
+                if (material != null) {
+                  materialUnit = material.unit.isNotEmpty ? material.unit : 'cái';
+                }
+              } catch (e2) {
+                print('⚠️ Error getting material unit: $e2');
+              }
             }
             
-            // Tổng hợp số lượng
-            totalQuantity = exportTransactions
-                .where((t) => t.materialId == txn.materialId && t.materialName == txn.materialName)
-                .fold(0.0, (sum, t) => sum + t.quantity);
+            // Lấy materialName gốc từ transaction đầu tiên (giữ nguyên format)
+            final originalMaterialName = sameNameTransactions.first.materialName;
             
             materialsMap[key] = {
-              'materialName': txn.materialName,
-              'materialId': txn.materialId,
+              'materialName': originalMaterialName,
+              'materialId': materialId ?? txn.materialId,
               'unit': materialUnit,
               'totalQuantity': totalQuantity,
               'ownerId': ownerId,
             };
             
-            print('  - Added material: ${txn.materialName}, quantity: $totalQuantity ${materialUnit}');
+            print('  - Added material: $originalMaterialName (normalized: $normalizedName), materialId: $materialId, quantity: $totalQuantity ${materialUnit}');
           }
         }
         
@@ -2557,7 +2605,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                     )
                   else
                     DropdownButtonFormField<String?>(
-                      value: selectedMaterialName,
+                      value: selectedMaterialKey,
                       isExpanded: true,
                       decoration: const InputDecoration(
                         labelText: 'Tên vật liệu *',
@@ -2567,8 +2615,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                         helperText: 'Chọn vật liệu có trong dự án',
                       ),
                       items: projectMaterials.map((material) {
+                        final key =
+                            '${material['materialId'] as String}|${material['materialName'] as String}';
                         return DropdownMenuItem(
-                          value: material['materialName'] as String,
+                          value: key,
                           child: Text(
                             material['materialName'] as String,
                             overflow: TextOverflow.ellipsis,
@@ -2577,15 +2627,20 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                         );
                       }).toList(),
                       onChanged: (v) {
+                        if (v == null) return;
                         final material = projectMaterials.firstWhere(
-                          (m) => m['materialName'] == v,
+                          (m) =>
+                              '${m['materialId'] as String}|${m['materialName'] as String}' ==
+                              v,
                           orElse: () => {},
                         );
                         
                         setDialogState(() {
-                          selectedMaterialName = v;
+                          selectedMaterialKey = v;
+                          selectedMaterialName = material['materialName'] as String?;
                           selectedMaterialUnit = material['unit'] as String? ?? 'cái';
-                          materialNameController.text = v ?? '';
+                          materialNameController.text =
+                              selectedMaterialName ?? '';
                           unitController.text = selectedMaterialUnit ?? '';
                         });
                       },
